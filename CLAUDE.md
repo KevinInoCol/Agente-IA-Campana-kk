@@ -28,7 +28,7 @@ y se sube la `version` del prompt.
 
 ## Repositorio y despliegue
 
-- Repo **privado**: `https://github.com/KevinInoCol/Agente-IA-Campana-Candidato-Toto-Reyes`
+- Repo **privado**: `https://github.com/KevinInoCol/Agente-IA-Campana-kk`
   (cuenta personal KevinInoCol, remote `origin`, rama `main`). En esta máquina la cuenta
   activa de `gh` es otra (kaic-ai): para operar con este repo usar
   `GH_TOKEN="$(gh auth token --user KevinInoCol)" gh ...`.
