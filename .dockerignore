@@ -1,0 +1,21 @@
+# Secretos: se inyectan por variables de entorno en EasyPanel.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+.claude/
+tests/
+CLAUDE.md
+README.md
+Dockerfile
+.dockerignore
+docker-compose.dev.yml
+requirements-dev.txt
+# La ingesta se corre a mano, no en el contenedor.
+rag/data/

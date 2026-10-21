@@ -1,0 +1,25 @@
+# Versiones FIJADAS a las mismas que corren en producción en MAD (Python 3.11).
+# Pinnear evita que un build futuro traiga un `langchain` mayor que rompa las APIs v1
+# usadas (create_agent, ToolRuntime, before_agent, PostgresSaver).
+langchain==1.3.13
+langchain-core==1.4.9
+langchain-openai==1.3.5
+langgraph==1.2.9
+langgraph-checkpoint-postgres==3.1.0
+psycopg[binary,pool]==3.3.4
+langfuse==4.14.0
+pyyaml==6.0.3
+python-dotenv==1.2.2
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+httpx==0.28.1
+openai==2.45.0
+redis==8.0.1
+
+# RAG: ingesta (rag/rag.py) y búsqueda (tools/conocimiento_tool.py) sobre Qdrant.
+qdrant-client==1.18.0
+pypdf==6.16.2
+
+# Capas 7 y 8 del guardrail de entrada (Llama Prompt Guard 2 y GPT-OSS-Safeguard).
+# Sin GROQ_API_KEY esas dos capas se omiten y el resto funciona igual.
+groq==1.5.0

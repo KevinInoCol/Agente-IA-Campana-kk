@@ -1,0 +1,7 @@
+# Configuración del LLM del agente.
+# agent.py construye el modelo con init_chat_model("<provider>:<model>", ...).
+
+provider: openai        # Proveedor del modelo
+model: gpt-4.1          # Modelo LLM (default de la agencia)
+temperature: 0.2        # 0.2 = fiel al guion del bot (textos casi literales) con algo de calidez en las partes libres
+max_tokens: 600         # Los mensajes del guion son de 3-4 líneas; 600 deja margen sin permitir respuestas largas

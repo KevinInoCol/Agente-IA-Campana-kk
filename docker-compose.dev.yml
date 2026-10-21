@@ -1,0 +1,17 @@
+# Postgres y Redis DESECHABLES para desarrollo local. No es el despliegue.
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down -v   # borra los datos
+# Puertos no estándar para no chocar con otros proyectos de la máquina.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: toto
+      POSTGRES_PASSWORD: toto_dev
+      POSTGRES_DB: toto_reyes
+    ports:
+      - "55432:5432"
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "56379:6379"

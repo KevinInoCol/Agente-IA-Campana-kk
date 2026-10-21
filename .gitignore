@@ -1,0 +1,21 @@
+# ==== Secretos / entorno (NUNCA subir) ====
+.env
+.env.*
+!.env.example
+
+# ==== Python ====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ==== Sistema operativo ====
+.DS_Store
+
+# ==== Fuentes del RAG (documentos del cliente) ====
+# Material del cliente con datos personales del perfil: no se versiona. Para
+# reingerir, copiar el PDF a mano en rag/data/.
+rag/data/*
+!rag/data/.gitkeep
