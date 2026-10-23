@@ -370,6 +370,9 @@ def _es_cedula_pelada(texto: str) -> bool:
     return sum(c.isdigit() for c in texto) == 10
 
 
+# Correo electrónico: se excluye del filtro de URLs (ver `_check_urls`).
+_CORREO = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
+
 # Regex compilados de URLs (module-level para reutilización)
 _URL_CON_PROTOCOLO = re.compile(
     r"(?i)(https?|ftp)://[\w\-]+(\.[\w\-]+)+(/[\w\-\./?=&%#]*)?",
@@ -614,6 +617,11 @@ class InputGuardrail:
     # Capa 6: URL Filter
     # ----------------------------------------------------------
     def _check_urls(self, texto: str) -> Tuple[bool, str]:
+        # 0) Los CORREOS no son enlaces. El bot pide el correo en el registro de la
+        #    bienvenida, y sin esto "maria@gmail.com" se leía como la URL "gmail.com"
+        #    y se bloqueaba TODO registro (verificado 2026-10-22). Se quitan antes de
+        #    buscar URLs; un enlace real en el mismo mensaje se sigue detectando.
+        texto = _CORREO.sub(" ", texto)
         # 1) Blacklist (acortadores / dominios maliciosos): bloquea SIEMPRE.
         #    Match anclado a límites de token (no por subcadena cruda).
         for pat in _BLACKLIST_RE:

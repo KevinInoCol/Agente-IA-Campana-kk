@@ -1,8 +1,8 @@
 # Agente WhatsApp · Toto Reyes
 
 Asistente de WhatsApp de la campaña de Juan José "Toto" Reyes Baquerizo (Concejal,
-Guayaquil). Presenta al candidato con el guion aprobado y capta simpatizantes
-(nombre, barrio y cómo quiere ayudar).
+Guayaquil). Registra a la persona (cédula, nombres, correo, barrio), presenta al candidato
+con el guion aprobado y capta simpatizantes (cómo quiere ayudar).
 
 LangChain v1 + LangGraph · FastAPI · SmartGob Conecta (WhatsApp) · Postgres · Redis · Langfuse.
 
@@ -31,7 +31,12 @@ En SmartGob Conecta (Administración → Integraciones → Webhooks), crear el w
 
 ## Datos captados
 
-`campana_toto_reyes.simpatizantes`: `telefono`, `nombre`, `barrio`, `ayuda`,
-`nombre_perfil`, `canal`, `creado_en`. Ver `migrations/`.
+- `campana_toto_reyes.ciudadanos` (registro de la bienvenida, uno por número):
+  `telefono`, `cedula`, `nombres`, `correo`, `barrio`, `nombre_perfil`, `canal`,
+  `creado_en`, `actualizado_en`.
+- `campana_toto_reyes.simpatizantes` ("Quiero sumarme", uno por idea): `telefono`,
+  `nombre`, `barrio`, `ayuda`, `nombre_perfil`, `canal`, `creado_en`.
+
+Las tablas se crean solas al arrancar. Ver `migrations/`.
 
 Más detalle de las decisiones en `CLAUDE.md`.

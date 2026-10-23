@@ -38,8 +38,18 @@ def test_tools_del_prompt_existen():
 
 
 def test_guion_completo():
-    # Las 10 secciones del documento del cliente tienen su texto en <guion>.
-    for seccion in ("BIENVENIDA", "QUIEN_ES", "FAMILIA", "VALORES_1", "VALORES_2", "FORMACION",
-                    "PROYECTOS", "SUMARME_NOMBRE", "SUMARME_BARRIO", "SUMARME_AYUDA",
-                    "SUMARME_CIERRE", "FALLBACK", "GRACIAS", "FUERA_DE_ALCANCE"):
+    # Las secciones del guion v1 del cliente (FlujoTTRBOT v1) tienen su texto en <guion>.
+    for seccion in ("BIENVENIDA_REGISTRO", "MENU_PRINCIPAL", "QUIEN_ES", "FAMILIA", "VALORES_1",
+                    "VALORES_2", "FORMACION", "PROYECTOS", "SUMARME_AYUDA", "SUMARME_CIERRE",
+                    "FALLBACK", "GRACIAS", "FUERA_DE_ALCANCE"):
         assert re.search(rf"^{seccion}$", SP, re.M), seccion
+
+
+def test_quiero_sumarme_no_vuelve_a_pedir_nombre_ni_barrio():
+    # Pasos 1 y 2 en rojo en el guion v1: el cliente pidió omitirlos.
+    assert "SUMARME_NOMBRE" not in SP and "SUMARME_BARRIO" not in SP
+
+
+def test_menu_principal_tiene_las_6_opciones():
+    linea = SP.split("MENU_PRINCIPAL\n")[1].split("\n")[1]
+    assert linea.startswith("Opciones:") and len(linea.split("·")) == 6 and "Formación" in linea

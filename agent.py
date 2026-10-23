@@ -40,7 +40,8 @@ from langchain.chat_models import init_chat_model
 from agent_context import ConversacionContext
 from conversation_history import get_checkpointer
 from input_guardrails import construir_middleware_guardrail
-from tools import guardar_simpatizante
+from middleware import EstadoRegistroMiddleware
+from tools import guardar_simpatizante, registrar_ciudadano
 
 load_dotenv(find_dotenv())
 
@@ -58,6 +59,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Las tools cableadas. Constante de módulo para que /health las reporte.
 TOOLS_CABLEADAS = [
+    registrar_ciudadano,    # ACCIÓN  registro de la bienvenida (solo los datos que faltan)
     guardar_simpatizante,   # ACCIÓN  cierre del flujo "Quiero sumarme"
 ]
 
@@ -146,8 +148,10 @@ def construir_agente():
         # misma tanda, y al revés: el prompt no puede nombrar una tool que no esté acá.
         tools=TOOLS_CABLEADAS,
         system_prompt=cargar_prompt(),
-        # El guardrail corta inyecciones, toxicidad y secretos ANTES del LLM.
-        middleware=[construir_middleware_guardrail()],
+        # 1) El guardrail corta inyecciones, toxicidad y secretos ANTES del LLM.
+        # 2) EstadoRegistro le dice al modelo qué datos ya tiene la persona en la base,
+        #    para que pida solo los que faltan (pedido del cliente, guion v1).
+        middleware=[construir_middleware_guardrail(), EstadoRegistroMiddleware()],
         checkpointer=get_checkpointer(),
         context_schema=ConversacionContext,
     )

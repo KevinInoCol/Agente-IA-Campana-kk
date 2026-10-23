@@ -5,20 +5,25 @@ con LangChain v1 (`create_agent`) + LangGraph sobre FastAPI. El canal es la API 
 **SmartGob Conecta** (plataforma de Origami que corre Evolution API por debajo), por
 indicación del cliente (2026-10-21).
 
-Hace dos cosas:
-1. **Presenta al candidato** siguiendo el guion que aprobó el cliente: quién es, su
+Hace tres cosas (guion v1, 2026-10-22):
+1. **Registra a la persona en la bienvenida**: cédula, nombres completos, barrio y
+   correo (opcional), con la tool `registrar_ciudadano` → tabla `ciudadanos`. **Solo
+   pide lo que falta**: el middleware `EstadoRegistro` le pasa al modelo, en cada
+   turno, qué datos ya están en la base para ese número de WhatsApp.
+2. **Presenta al candidato** siguiendo el guion que aprobó el cliente: quién es, su
    familia, sus valores, su formación y sus proyectos.
-2. **Capta simpatizantes** con el flujo "Quiero sumarme": pide nombre, barrio y cómo
-   quiere ayudar, y los guarda con la tool `guardar_simpatizante` junto al número de
-   WhatsApp. **Esa captura es el dato que le importa al cliente.**
+3. **Capta simpatizantes** con "Quiero sumarme": ya NO pide nombre ni barrio (están en
+   el registro), solo cómo quiere ayudar → `guardar_simpatizante` → tabla
+   `simpatizantes`. **Registro y captura son los datos que le importan al cliente.**
 
 ## Fuente de verdad del contenido
 
-En `../Datos/`:
+En `../` (carpeta del cliente):
 
 | Documento | Uso |
 |---|---|
-| `BOT_x5f_WHATSAPP_…_FINAL.docx/.pdf` | **Fuente de verdad.** El guion completo, que va casi literal en `<guion>` del prompt. |
+| `FlujoTTRBOT v1.docx` (2026-10-22) | **Fuente de verdad.** Guion v1, casi literal en `<guion>` del prompt. Lo que está en ROJO (pasos 1 y 2 de "Quiero sumarme") se omite: el cliente aclaró que esos datos ya están en la base y solo hay que pedir los que falten. |
+| `Datos/BOT_x5f_WHATSAPP_…_FINAL.docx/.pdf` | Guion anterior, reemplazado por el v1. |
 | `TOTO REYES2.pdf` (manual de marca) | Solo el cargo (Concejal) y las frases de campaña. |
 | `AYUDA MEMORIA INTEGRAL_….docx/.pdf` | **No se usa.** Es una plantilla con las secciones vacías, y los valores que trae son de otro perfil ("formación médica", "Medicina"). |
 | `postman-ap.zip`, `key-conexion.txt` | API y credencial de **SmartGob Conecta**: es el canal del agente. La key ya está en el `.env` (`SMARTGOB_API_KEY`). |
@@ -43,7 +48,7 @@ y se sube la `version` del prompt.
 ```bash
 conda activate toto-reyes                               # Python 3.11, requirements-dev.txt
 docker compose -p toto-reyes-dev -f docker-compose.dev.yml up -d   # Postgres :55432 + Redis :56379 (desechables)
-python -m pytest -q                                     # 39 tests (el de integración necesita el Postgres local)
+python -m pytest -q                                     # 66 tests (el de integración necesita el Postgres local)
 python rag/rag.py --dry-run                            # revisa la Ayuda Memoria sin gastar tokens ni tocar Qdrant
 python main.py --telefono 593991234567                  # CLI
 uvicorn main_conecta:app --reload --port 8000           # canal WhatsApp (webhook de SmartGob Conecta)
@@ -58,9 +63,11 @@ main.py                  CLI
 main_conecta.py          FastAPI: webhook de Conecta (firma HMAC) -> debounce -> agente -> POST /messages
 model_config/            parámetros del LLM (gpt-4.1, temperatura 0.2)
 prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
-tools/                   guardar_simpatizante (cableada) + buscar_conocimiento (lista, SIN cablear)
+tools/                   registrar_ciudadano + guardar_simpatizante (cableadas); buscar_conocimiento (SIN cablear)
+middleware/              EstadoRegistro: agrega <estado_del_registro> al system prompt en cada llamada
+dominio/                 validación pura de cédula (módulo 10) y correo               (de MAD)
 rag/rag.py               ingesta de la Ayuda Memoria a Qdrant (rag/data/, no versionado) (de MAD)
-simpatizantes/           dónde se guarda un lead: Postgres + Apps Script (opcional)
+simpatizantes/           repositorio de ciudadanos y simpatizantes: Postgres + Apps Script (opcional)
 smartgob_conecta/        config, cliente (POST /messages, audios) y firma/parser del webhook
 transcripcion.py         notas de voz -> texto (whisper-1)
 conversation_history/    checkpointer PostgresSaver en el esquema DB_SCHEMA   (de MAD)
@@ -133,6 +140,24 @@ traerlo aquí, y al revés.
   ESTRUCTURA (solo claves, sin valores) de los 5 primeros webhooks.
 - Base de datos y Redis **propios de esta campaña**. El `.env` local apunta a los
   contenedores de `docker-compose.dev.yml`. No reutilizar los de MAD.
+
+## Registro de la bienvenida (guion v1)
+
+- Obligatorios para que el registro quede completo: cédula, nombres y barrio. El
+  correo se pide pero es opcional (decisión nuestra: el guion no dice qué hacer si no
+  lo tienen, y perder el registro por un correo es peor).
+- **Cada dato se guarda apenas llega**, aunque falten otros. La primera versión
+  esperaba a tener todo y, probando con el modelo real, se perdían datos.
+- La cédula se valida en el backend (`dominio/identidad.py`, el algoritmo de MAD). El
+  modelo nunca la ve en `<estado_del_registro>` ni la repite.
+- El registro no bloquea la información: si la persona pregunta antes de registrarse,
+  se le responde y se le piden los datos (como mucho dos veces).
+- Una fila por número de WhatsApp (índice único parcial sobre `telefono`).
+- ⚠️ **Datos personales (LOPDP):** ahora se guarda cédula y correo. El guion v1 no
+  trae ningún aviso de tratamiento de datos ni consentimiento. Pendiente de que el
+  cliente decida si agrega una línea de consentimiento a la bienvenida.
+- El guardrail de entrada bloqueaba todo mensaje con correo (leía `gmail.com` como un
+  enlace). Corregido el 2026-10-22: los correos se quitan antes del filtro de URLs.
 
 ## Puntos a vigilar
 

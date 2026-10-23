@@ -42,9 +42,12 @@ load_dotenv(find_dotenv())
 _TEL_EC_RE = re.compile(r"(?:\+?593[\s\-]?|(?<!\d)0)\d{8,9}(?!\d)")
 # Cédula/identificador de 10 dígitos (válida o no): red de seguridad amplia.
 _CEDULA_RE = re.compile(r"(?<!\d)\d{10}(?!\d)")
+# Correo: el registro de la bienvenida lo pide (guion v1, 2026-10-22).
+_CORREO_RE = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
 
 
 def _redactar_texto(s: str) -> str:
+    s = _CORREO_RE.sub("[REDACTED_CORREO]", s)
     s = _TEL_EC_RE.sub("[REDACTED_TEL]", s)
     s = _CEDULA_RE.sub("[REDACTED_CEDULA]", s)
     return s
