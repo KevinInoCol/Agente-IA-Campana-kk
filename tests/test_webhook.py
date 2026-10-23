@@ -149,3 +149,48 @@ def test_forma_del_payload_no_trae_valores():
     forma = webhook.forma_del_payload({"data": _mensaje()})
     assert "hola" not in json.dumps(forma) and "593991234567" not in json.dumps(forma)
     assert forma["data"]["body"] == "str"
+
+
+# --- Envío: reintento por contactId -------------------------------------------
+
+def test_parsea_contact_id():
+    payload = {"type": "message.received",
+               "data": {"from": "+51959000000", "text": "hola", "contactId": "ct-1",
+                        "messageId": "m-1", "connectionId": "conn-1"}}
+    assert webhook.parsear(payload, "message.received").contact_id == "ct-1"
+
+
+class _Resp:
+    def __init__(self, status, texto=""):
+        self.status_code, self.text = status, texto
+
+
+def _simular_envio(monkeypatch, respuestas):
+    import asyncio
+    from smartgob_conecta import cliente
+    destinos = []
+
+    async def post(destino, texto):
+        destinos.append(destino)
+        return respuestas.pop(0)
+
+    monkeypatch.setattr(cliente, "_post_mensaje", post)
+    return destinos, lambda *a: asyncio.run(cliente.enviar_texto(*a))
+
+
+def test_numero_rechazado_reintenta_por_contacto(monkeypatch):
+    destinos, enviar = _simular_envio(monkeypatch, [_Resp(400, '{"code":"INVALID_PHONE"}'),
+                                                    _Resp(202)])
+    assert enviar("51959000000", "hola", "ct-1") is True
+    assert destinos == [{"to": "51959000000"}, {"contactId": "ct-1"}]
+
+
+def test_numero_rechazado_sin_contacto_no_reintenta(monkeypatch):
+    destinos, enviar = _simular_envio(monkeypatch, [_Resp(400, '{"code":"INVALID_PHONE"}')])
+    assert enviar("51959000000", "hola", None) is False and len(destinos) == 1
+
+
+def test_numero_ecuatoriano_va_directo(monkeypatch):
+    destinos, enviar = _simular_envio(monkeypatch, [_Resp(202)])
+    assert enviar("593991234567", "hola", "ct-1") is True
+    assert destinos == [{"to": "+593991234567"}]

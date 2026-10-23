@@ -72,9 +72,10 @@ logger = logging.getLogger("canal_conecta")
 _agente = None
 _payloads_registrados = 0
 
-# Nombre de perfil por teléfono. El debounce solo transporta (conversación, texto),
-# así que el nombre se recuerda aquí hasta que se procesa.
+# Nombre de perfil y contactId por teléfono. El debounce solo transporta
+# (conversación, texto), así que se recuerdan aquí hasta que se procesa.
 _nombres_perfil: dict[str, str] = {}
+_contact_ids: dict[str, str] = {}
 
 # Respaldo de deduplicación en memoria cuando no hay Redis.
 _vistos_local: "OrderedDict[str, None]" = OrderedDict()
@@ -164,13 +165,14 @@ def _invocar_agente(texto: str, telefono: str, nombre_perfil: str | None) -> str
 async def _procesar(telefono: str, texto: str) -> None:
     """Responde a `texto` (ya concatenado por el debounce) y envía la respuesta."""
     nombre_perfil = _nombres_perfil.pop(telefono, None)
+    contact_id = _contact_ids.pop(telefono, None)
     try:
         respuesta = await run_in_threadpool(_invocar_agente, texto, telefono, nombre_perfil)
     except Exception:  # noqa: BLE001 — la persona no puede quedarse sin respuesta
         logger.exception("Falló la invocación del agente")
         respuesta = MENSAJE_ERROR
     if respuesta:
-        await smartgob_conecta.enviar_texto(telefono, respuesta)
+        await smartgob_conecta.enviar_texto(telefono, respuesta, contact_id)
 
 
 async def _ya_procesado(clave_evento: str | None) -> bool:
@@ -204,11 +206,14 @@ async def _atender(mensaje: "smartgob_conecta.MensajeEntrante") -> None:
             logger.exception("No se pudo transcribir el audio")
             texto = ""
         if not texto:
-            await smartgob_conecta.enviar_texto(mensaje.telefono, MENSAJE_AUDIO_FALLIDO)
+            await smartgob_conecta.enviar_texto(mensaje.telefono, MENSAJE_AUDIO_FALLIDO,
+                                                mensaje.contact_id)
             return
 
     if mensaje.nombre_perfil:
         _nombres_perfil[mensaje.telefono] = mensaje.nombre_perfil
+    if mensaje.contact_id:
+        _contact_ids[mensaje.telefono] = mensaje.contact_id
 
     if BUFFER_ENABLED:
         try:

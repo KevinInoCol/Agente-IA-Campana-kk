@@ -38,20 +38,31 @@ def _sin_variables(texto: str) -> str:
     return texto.replace("{{", "{ {").replace("}}", "} }")
 
 
-async def enviar_texto(telefono: str, texto: str, clave_idempotencia: str | None = None) -> bool:
-    """Envía `texto` al `telefono`. True si Conecta registró el envío (202)."""
-    cuerpo = {
-        "connectionId": config.SMARTGOB_CONNECTION_ID,
-        "to": _destino(telefono),
-        "text": _sin_variables(texto)[:4096],   # límite del API
-    }
-    headers = {**_headers(), "Idempotency-Key": clave_idempotencia or f"agente:{uuid.uuid4().hex}"}
+async def _post_mensaje(destino: dict, texto: str) -> httpx.Response | None:
+    cuerpo = {"connectionId": config.SMARTGOB_CONNECTION_ID, **destino,
+              "text": _sin_variables(texto)[:4096]}   # 4096: límite del API
+    headers = {**_headers(), "Idempotency-Key": f"agente:{uuid.uuid4().hex}"}
     try:
         async with httpx.AsyncClient(timeout=config.TIMEOUT_SEGUNDOS) as cliente:
-            r = await cliente.post(f"{config.SMARTGOB_API_URL}/messages", headers=headers,
-                                   json=cuerpo)
+            return await cliente.post(f"{config.SMARTGOB_API_URL}/messages", headers=headers,
+                                      json=cuerpo)
     except httpx.HTTPError as e:
         logger.error("Conecta POST /messages falló: %s", type(e).__name__)
+        return None
+
+
+async def enviar_texto(telefono: str, texto: str, contact_id: str | None = None) -> bool:
+    """Envía `texto` al `telefono`. True si Conecta registró el envío (202).
+
+    POST /messages con `to` solo acepta números de Ecuador (09… / +5939…): a un +51
+    responde 400 INVALID_PHONE. Si el webhook trajo el `contactId` de la persona, se
+    reintenta enviando al contacto (la API acepta `contactId` en lugar de `to`).
+    """
+    r = await _post_mensaje({"to": _destino(telefono)}, texto)
+    if r is not None and r.status_code == 400 and "INVALID_PHONE" in r.text and contact_id:
+        logger.info("Número rechazado (INVALID_PHONE); reintento por contactId.")
+        r = await _post_mensaje({"contactId": contact_id}, texto)
+    if r is None:
         return False
     if r.status_code == 409:
         # Destinatario con baja de comunicaciones o capacidad no disponible.
@@ -59,7 +70,8 @@ async def enviar_texto(telefono: str, texto: str, clave_idempotencia: str | None
         return False
     if r.status_code == 400 and "INVALID_PHONE" in r.text:
         logger.error("Conecta rechazó el número (INVALID_PHONE): POST /messages solo acepta "
-                     "números de Ecuador (09… / +5939…).")
+                     "números de Ecuador (09… / +5939…)%s.",
+                     ", ni siquiera por contactId" if contact_id else " y no llegó contactId")
         return False
     if r.status_code >= 400:
         logger.error("Conecta POST /messages respondió %s: %s", r.status_code, r.text[:300])

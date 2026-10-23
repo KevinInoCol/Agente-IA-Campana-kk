@@ -51,6 +51,7 @@ class MensajeEntrante:
     nombre_perfil: str | None = None
     es_audio: bool = False
     media_file_id: str | None = None
+    contact_id: str | None = None
 
 
 def firma_valida(cuerpo: bytes, cabecera: str | None, ahora: float | None = None) -> bool:
@@ -167,4 +168,5 @@ def parsear(payload: dict, tipo: str) -> MensajeEntrante | None:
         nombre_perfil=str(nombre).strip() if nombre else None,
         es_audio=es_audio,
         media_file_id=_primero(msg, "mediaFileId"),
+        contact_id=_primero(msg, "contactId"),
     )
