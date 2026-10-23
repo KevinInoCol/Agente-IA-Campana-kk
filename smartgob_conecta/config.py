@@ -33,9 +33,10 @@ load_dotenv(find_dotenv())
 SMARTGOB_API_URL = os.getenv(
     "SMARTGOB_API_URL", "https://smartconecta.origamismartgob.com/api/v1"
 ).strip().rstrip("/")
-# Credencial de integración (sgc_…). Es la de `Datos/key-conexion.txt`.
+# Credencial de integración (sgc_…) de la organización de Conecta de esta campaña.
 SMARTGOB_API_KEY = os.getenv("SMARTGOB_API_KEY", "").strip()
-# Conexión de WhatsApp del candidato ("TOTO REYES"). Se obtiene con GET /connections.
+# Conexión (número de WhatsApp) de ESTA campaña. Se obtiene con GET /connections.
+# Obligatoria: sin ella el webhook descarta todos los mensajes (ver webhook.parsear).
 SMARTGOB_CONNECTION_ID = os.getenv("SMARTGOB_CONNECTION_ID", "").strip()
 
 # Secreto de firma del webhook. Lo muestra el panel UNA sola vez al crear el webhook

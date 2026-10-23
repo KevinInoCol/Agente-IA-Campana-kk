@@ -51,6 +51,9 @@ class MensajeEntrante:
     nombre_perfil: str | None = None
     es_audio: bool = False
     media_file_id: str | None = None
+    # True si el mensaje trae coordenadas (ubicación de WhatsApp). MAD las usa para
+    # activar la asistencia a eventos; el canal las extrae del payload completo.
+    tiene_ubicacion: bool = False
     contact_id: str | None = None
 
 
@@ -64,16 +67,21 @@ def firma_valida(cuerpo: bytes, cabecera: str | None, ahora: float | None = None
         return config.SMARTGOB_ALLOW_UNSIGNED
     if not cabecera:
         return False
-    partes = dict(p.strip().split("=", 1) for p in cabecera.split(",") if "=" in p)
-    t, v1 = partes.get("t", ""), partes.get("v1", "")
-    if not t.isdigit() or not v1:
+    try:
+        partes = dict(p.strip().split("=", 1) for p in cabecera.split(",") if "=" in p)
+        t, v1 = partes.get("t", ""), partes.get("v1", "")
+        # isascii: "²" pasa isdigit() pero int() lo rechaza; un v1 no ASCII hace fallar
+        # compare_digest. Los dos deben dar 401, no 500.
+        if not (t.isascii() and t.isdigit() and v1 and v1.isascii()):
+            return False
+        ahora = time.time() if ahora is None else ahora
+        if abs(ahora - int(t)) > config.TOLERANCIA_FIRMA_SEGUNDOS:
+            return False
+        esperado = hmac.new(config.SMARTGOB_WEBHOOK_SECRET.encode(),
+                            t.encode() + b"." + cuerpo, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(esperado, v1)
+    except (TypeError, ValueError):
         return False
-    ahora = time.time() if ahora is None else ahora
-    if abs(ahora - int(t)) > config.TOLERANCIA_FIRMA_SEGUNDOS:
-        return False
-    esperado = hmac.new(config.SMARTGOB_WEBHOOK_SECRET.encode(),
-                        t.encode() + b"." + cuerpo, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(esperado, v1)
 
 
 def tipo_de_evento(payload: dict, cabecera: str | None) -> str:
@@ -118,13 +126,40 @@ def _mensaje(payload: dict) -> dict | None:
     return None
 
 
+_CLAVES_LATITUD = {"lat", "latitude", "latitud"}
+
+
+def _tiene_coordenadas(nodo, profundidad: int = 0) -> bool:
+    """True si algún objeto del payload tiene una clave de latitud (ubicación)."""
+    if profundidad > 8:
+        return False
+    if isinstance(nodo, dict):
+        return any(str(k).strip().lower() in _CLAVES_LATITUD for k in nodo) or any(
+            _tiene_coordenadas(v, profundidad + 1) for v in nodo.values())
+    if isinstance(nodo, list):
+        return any(_tiene_coordenadas(x, profundidad + 1) for x in nodo[:20])
+    return False
+
+
+# JIDs de WhatsApp que NO son una persona: grupos, LID (id opaco), estados, canales.
+_SUFIJOS_NO_PERSONA = ("@g.us", "@lid", "@broadcast", "@newsletter")
+
+
 def _solo_digitos(numero) -> str:
-    texto = str(numero or "").split("@", 1)[0]
-    digitos = "".join(c for c in texto if c.isdigit())
+    """Teléfono como dígitos con código de país, o "" si no es el número de una persona.
+
+    Un JID de grupo o un LID no es un teléfono: tomarlo como tal crearía un hilo
+    compartido por todo un grupo, o guardaría un "+<lid>" de 18 dígitos como teléfono
+    del ciudadano. Se exige la longitud de E.164 (8 a 15 dígitos).
+    """
+    crudo = str(numero or "").strip().lower()
+    if crudo.endswith(_SUFIJOS_NO_PERSONA):
+        return ""
+    digitos = "".join(c for c in crudo.split("@", 1)[0] if c.isascii() and c.isdigit())
     # 09XXXXXXXX (formato local de Ecuador) -> 5939XXXXXXXX, para un solo thread por persona.
     if len(digitos) == 10 and digitos.startswith("09"):
         digitos = "593" + digitos[1:]
-    return digitos
+    return digitos if 8 <= len(digitos) <= 15 else ""
 
 
 def parsear(payload: dict, tipo: str) -> MensajeEntrante | None:
@@ -138,8 +173,12 @@ def parsear(payload: dict, tipo: str) -> MensajeEntrante | None:
     direccion = str(msg.get("direction") or "INBOUND").upper()
     if direccion != "INBOUND":
         return None
+    # FAIL-CLOSED: la credencial y el webhook son por ORGANIZACIÓN de Conecta, que puede
+    # tener varias conexiones (números). Solo se atiende la de este agente: sin
+    # SMARTGOB_CONNECTION_ID, o con un mensaje sin connectionId, se descarta. Si no,
+    # el WhatsApp de otra campaña de la misma organización entraría a este agente.
     conexion = _primero(msg, "connectionId") or (msg.get("connection") or {}).get("id")
-    if config.SMARTGOB_CONNECTION_ID and conexion and conexion != config.SMARTGOB_CONNECTION_ID:
+    if not config.SMARTGOB_CONNECTION_ID or conexion != config.SMARTGOB_CONNECTION_ID:
         return None
 
     telefono = _solo_digitos(_primero(msg, "from", "counterpartPhone", "phone")
@@ -155,8 +194,9 @@ def parsear(payload: dict, tipo: str) -> MensajeEntrante | None:
     mimetype = str(msg.get("mimetype") or (msg.get("mediaFile") or {}).get("mimeType") or "")
     es_audio = not texto and (tipo_msg in _TIPOS_AUDIO or mimetype.startswith("audio/")
                               or (bool(msg.get("hasMedia")) and "audio" in tipo_msg))
-    if not texto and not es_audio:
-        return None   # imagen sin pie, sticker, ubicación...: nada que responder
+    tiene_ubicacion = _tiene_coordenadas(msg)
+    if not texto and not es_audio and not tiene_ubicacion:
+        return None   # imagen sin pie, sticker...: nada que responder
 
     contacto = msg.get("contact") if isinstance(msg.get("contact"), dict) else {}
     nombre = _primero(contacto, "fullName", "name") or _primero(msg, "pushName", "profileName")
@@ -169,4 +209,5 @@ def parsear(payload: dict, tipo: str) -> MensajeEntrante | None:
         es_audio=es_audio,
         media_file_id=_primero(msg, "mediaFileId"),
         contact_id=_primero(msg, "contactId"),
+        tiene_ubicacion=tiene_ubicacion,
     )

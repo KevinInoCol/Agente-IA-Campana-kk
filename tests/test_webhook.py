@@ -1,4 +1,4 @@
-"""Firma y parseo del webhook `message.received` de SmartGob Conecta (sin red)."""
+"""Firma, parseo y envío del paquete smartgob_conecta (compartido con MAD). Sin red."""
 
 import hashlib
 import hmac
@@ -103,8 +103,8 @@ def test_from_y_text_en_vez_de_counterpartphone_y_body():
 
 
 def test_mensaje_como_texto_plano():
-    m = webhook.parsear({"data": {"from": "593991234567", "message": "hola"}},
-                        "message.received")
+    m = webhook.parsear({"data": {"from": "593991234567", "message": "hola",
+                                  "connectionId": "conn-1"}}, "message.received")
     assert m.texto == "hola"
 
 
@@ -164,6 +164,10 @@ class _Resp:
     def __init__(self, status, texto=""):
         self.status_code, self.text = status, texto
 
+    def json(self):
+        import json as _json
+        return _json.loads(self.text) if self.text else {}
+
 
 def _simular_envio(monkeypatch, respuestas):
     import asyncio
@@ -194,3 +198,34 @@ def test_numero_ecuatoriano_va_directo(monkeypatch):
     destinos, enviar = _simular_envio(monkeypatch, [_Resp(202)])
     assert enviar("593991234567", "hola", "ct-1") is True
     assert destinos == [{"to": "+593991234567"}]
+
+
+def test_sin_connection_id_configurado_se_descarta(monkeypatch):
+    monkeypatch.setattr(config, "SMARTGOB_CONNECTION_ID", "")
+    assert webhook.parsear({"data": _mensaje()}, "message.received") is None
+
+
+def test_mensaje_sin_connection_id_se_descarta():
+    datos = _mensaje(); datos.pop("connectionId")
+    assert webhook.parsear({"data": datos}, "message.received") is None
+
+
+@pytest.mark.parametrize("remitente", ["120363012345678901@g.us", "12345678901234567@lid",
+                                       "status@broadcast", "123", "1234567890123456789"])
+def test_remitentes_que_no_son_un_telefono(remitente):
+    assert webhook.parsear({"data": _mensaje(counterpartPhone=remitente)},
+                           "message.received") is None
+
+
+@pytest.mark.parametrize("cabecera", ["t=²,v1=abc", "t=1000000,v1=ñandú"])
+def test_firma_con_caracteres_raros_es_invalida_no_error(monkeypatch, cabecera):
+    monkeypatch.setattr(config, "SMARTGOB_WEBHOOK_SECRET", SECRETO)
+    assert webhook.firma_valida(b"{}", cabecera, ahora=1_000_000) is False
+
+
+def test_ubicacion_sin_texto_se_acepta():
+    m = webhook.parsear({"data": {"from": "+593991234567", "connectionId": "conn-1",
+                                  "messageType": "location",
+                                  "location": {"latitude": -1.86, "longitude": -79.97}}},
+                        "message.received")
+    assert m is not None and m.tiene_ubicacion and m.texto == ""

@@ -19,3 +19,7 @@ venv/
 # reingerir, copiar el PDF a mano en rag/data/.
 rag/data/*
 !rag/data/.gitkeep
+
+# ==== Credencial de SmartGob Conecta ====
+key-conexion*.txt
+**/key-conexion*.txt

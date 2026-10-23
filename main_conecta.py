@@ -94,8 +94,9 @@ async def lifespan(app: FastAPI):
                        "se enviarán.")
     if not conecta_config.SMARTGOB_WEBHOOK_SECRET:
         if conecta_config.SMARTGOB_ALLOW_UNSIGNED:
-            logger.warning("⚠️  SMARTGOB_WEBHOOK_SECRET vacío y SMARTGOB_ALLOW_UNSIGNED=true: "
-                           "se aceptan webhooks SIN firma. Solo para desarrollo.")
+            logger.error("⛔ SMARTGOB_ALLOW_UNSIGNED=true SIN secreto: se aceptan webhooks SIN "
+                         "FIRMA. Cualquiera podría hacer que el bot escriba desde el WhatsApp "
+                         "del candidato. SOLO para desarrollo local.")
         else:
             logger.warning("⚠️  SMARTGOB_WEBHOOK_SECRET vacío: el webhook RECHAZA todo (401) "
                            "hasta configurar el secreto de firma.")
@@ -195,6 +196,14 @@ async def _ya_procesado(clave_evento: str | None) -> bool:
 
 
 async def _atender(mensaje: "smartgob_conecta.MensajeEntrante") -> None:
+    """Corre en segundo plano: ningún error puede escaparse sin control (sin PII)."""
+    try:
+        await _atender_mensaje(mensaje)
+    except Exception:  # noqa: BLE001
+        logger.exception("Fallo inesperado atendiendo un mensaje de Conecta")
+
+
+async def _atender_mensaje(mensaje: "smartgob_conecta.MensajeEntrante") -> None:
     """Todo lo que pasa después de devolverle 200 a Conecta."""
     texto = mensaje.texto
     if mensaje.es_audio:
@@ -250,10 +259,19 @@ async def webhook_conecta(
         logger.info("Evento de prueba de Conecta recibido y verificado.")
         return {"ok": True, "procesado": False, "motivo": "prueba"}
 
+    if not conecta_config.esta_configurado():
+        # 200 para que Conecta no reintente: sin credenciales no se puede responder.
+        return {"ok": True, "procesado": False, "motivo": "canal sin configurar"}
+
     mensaje = smartgob_conecta.parsear(payload, tipo)
     if mensaje is None:
         return {"ok": True, "procesado": False}
-    if await _ya_procesado(x_conecta_event_id or mensaje.id_mensaje):
+    # Dedupe por un id FIRMADO (va en el cuerpo, que cubre el HMAC). La cabecera
+    # X-Conecta-Event-Id no está firmada: una petición capturada podría reenviarse
+    # dentro de los 5 min con otro event-id y procesarse de nuevo.
+    id_firmado = (payload.get("id") if isinstance(payload.get("id"), str) else None) \
+        or mensaje.id_mensaje
+    if await _ya_procesado(id_firmado):
         return {"ok": True, "procesado": False, "motivo": "duplicado"}
 
     tarea = asyncio.create_task(_atender(mensaje))
