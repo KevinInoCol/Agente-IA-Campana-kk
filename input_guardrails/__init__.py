@@ -1,4 +1,4 @@
-"""InputGuardrail del agente: pipeline de seguridad de entrada (8 capas)."""
+"""InputGuardrail del agente: pipeline LOCAL de seguridad de entrada (6 capas, sin red)."""
 
 from .guardrail_middleware import construir_middleware_guardrail
 

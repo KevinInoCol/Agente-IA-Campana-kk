@@ -1,5 +1,5 @@
 """
-Middleware que acopla el InputGuardrail (8 capas) al agente
+Middleware que acopla el InputGuardrail (6 capas locales) al agente
 ===========================================================
 
 Envuelve el pipeline de seguridad de entrada (`input_guardrail.py`) como un
@@ -54,7 +54,7 @@ def _texto_del_mensaje(contenido: Any) -> str:
 
 
 class InputGuardrailMiddleware(AgentMiddleware):
-    """Guardrail de entrada (8 capas) como middleware `before_agent` del agente."""
+    """Guardrail de entrada (6 capas locales) como middleware `before_agent` del agente."""
 
     @hook_config(can_jump_to=["end"])
     def before_agent(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:

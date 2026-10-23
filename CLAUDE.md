@@ -72,7 +72,8 @@ smartgob_conecta/        config, cliente (POST /messages, audios) y firma/parser
 transcripcion.py         notas de voz -> texto (whisper-1)
 conversation_history/    checkpointer PostgresSaver en el esquema DB_SCHEMA   (de MAD)
 debounce/                junta mensajes en ráfaga con Redis                    (de MAD)
-input_guardrails/        guardrail de entrada de 8 capas (before_agent)        (de MAD)
+input_guardrails/        guardrail de entrada LOCAL, 6 capas sin red (before_agent) (de MAD)
+guardrails_model_armor/  Model Armor de Google Cloud: reemplaza a las capas de Groq (APAGADO)
 observabilty/            Langfuse + máscara de cédula/teléfono                 (de MAD)
 migrations/              SQL idempotente (ver migrations/README.md)
 ```
@@ -161,13 +162,13 @@ traerlo aquí, y al revés.
 
 ## Puntos a vigilar
 
-- **Guardrail y Groq.** Las capas 7 y 8 consultan modelos en Groq con una clave que
-  se comparte con MAD. El 2026-10-22, en producción, un "1" del menú recibió "el
-  servicio de seguridad no está disponible": Groq falló y el guardrail estaba en
-  fail-close. Desde entonces:
-  - las respuestas triviales ("1", "sí", "gracias") no pasan por Groq;
-  - si Groq falla, el mensaje SIGUE (`GUARDRAIL_FAIL_CLOSED=false`, default); las
-    capas 1-6 son locales y siguen bloqueando;
-  - cliente de Groq con `timeout=8` y 1 reintento (antes podía esperar 20 s).
+- **Guardrail: Groq → Model Armor (2026-10-23).** Las antiguas capas 7 y 8 (modelos
+  de IA en Groq) se ELIMINARON por decisión del cliente: eran modelos "Preview" (no
+  aptos para producción) y su límite gratuito (2.000 tokens/min, compartido con MAD)
+  dejó sin respuesta a la gente. Las reemplaza **Model Armor**
+  (`guardrails_model_armor/`), ya programado y probado sin GCP pero **APAGADO**: el
+  middleware está comentado en `agent.py` y el SDK en `requirements.txt` hasta que
+  Giovani pase la cuenta de GCP. Pasos en `guardrails_model_armor/README.md`.
+  Mientras tanto protegen las 6 capas locales de `input_guardrails/`.
 - **Langfuse**: proyecto compartido con otras campañas. Las trazas van etiquetadas con
   `campana_toto_reyes`.

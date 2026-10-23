@@ -20,6 +20,6 @@ redis==8.0.1
 qdrant-client==1.18.0
 pypdf==6.16.2
 
-# Capas 7 y 8 del guardrail de entrada (Llama Prompt Guard 2 y GPT-OSS-Safeguard).
-# Sin GROQ_API_KEY esas dos capas se omiten y el resto funciona igual.
-groq==1.5.0
+# Model Armor (Google Cloud), guardrails_model_armor/. APAGADO hasta tener la cuenta de
+# GCP: descomentar al activarlo (ver guardrails_model_armor/README.md).
+# google-cloud-modelarmor==0.7.3

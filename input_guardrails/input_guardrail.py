@@ -2,16 +2,19 @@
 InputGuardrail — Orquestador de Seguridad para el agente de Juan José Reyes Baquerizo
 (campaña "Toto Reyes · Concejal", Guayaquil).
 
-Pipeline de validación (hasta 8 capas; por defecto 5/8 — ver GUARDRAIL_PII_ENABLED
-y GROQ_API_KEY):
+Pipeline de validación LOCAL (6 capas; por defecto 5/6 — ver GUARDRAIL_PII_ENABLED):
   1. Secret Keys      (REGEX)    — Claves de API y tokens secretos            [siempre]
   2. Prompt Injection (REGEX)    — Jailbreak, manipulación del sistema         [siempre]
   3. Toxic Patterns   (REGEX)    — Amenazas, hate speech, acoso, autolesión    [siempre]
   4. Custom Regex     (REGEX)    — Patrones configurables por el admin         [siempre]
   5. PII Detection    (LOCAL)    — Cédula EC, RUC EC, Email, Teléfono EC       [GUARDRAIL_PII_ENABLED, default OFF]
   6. URL Filter       (REGEX)    — URLs, acortadores y dominios maliciosos     [siempre]
-  7. Llama Prompt Guard 2 (GROQ) — Detección de jailbreak/injection por IA     [requiere GROQ_API_KEY]
-  8. GPT-OSS-Safeguard 20B (GROQ) — Clasificación NSFW / Violencia / Odio      [requiere GROQ_API_KEY]
+
+Las antiguas capas 7 y 8 (modelos de IA en Groq) se ELIMINARON el 2026-10-23 por
+decisión del cliente: las reemplaza Model Armor de Google Cloud
+(`guardrails_model_armor/`), que corre como middleware aparte. Motivos: los dos
+modelos de Groq eran "Preview" (no aptos para producción) y su límite gratuito
+(2.000 tokens/min, compartido con MAD) dejaba sin respuesta a la gente.
 
 Patrones en inglés (EN) y español (ES).
 
@@ -28,7 +31,7 @@ from dotenv import load_dotenv, find_dotenv
 
 # El singleton InputGuardrail() se construye al importar este módulo (abajo), y
 # agent.py lo importa ANTES de su propio load_dotenv. Cargamos el .env aquí para
-# que los toggles (GUARDRAIL_PII_ENABLED) y GROQ_API_KEY se lean bien también en
+# que los toggles (GUARDRAIL_PII_ENABLED) se lean bien también en
 # ejecución local (patrón de la decisión #7). En la VPS las vars van en el entorno
 # del proceso, así que funcionan igual.
 load_dotenv(find_dotenv())
@@ -314,23 +317,6 @@ DEFAULT_BLACKLIST: List[str] = [
     "malware.com", "phishing.org",
 ]
 
-# Categorías de la IA de moderación (Capa 8: GPT-OSS-Safeguard / LlamaGuard) a IGNORAR.
-# S7 (Privacy) se ignora A PROPÓSITO: este bot SOLICITA la cédula del ciudadano —con
-# finalidad y consentimiento explícitos— para el REGISTRO, y el modelo la marca como
-# "violación de privacidad" ~16% de las veces (falso positivo NO-determinista que
-# rompía 1 de cada 6 registros). Se mantienen activas el resto de categorías (violencia,
-# autolesión, armas, etc.). Configurable por env (lista separada por comas).
-GUARDRAIL_SKIP_CATEGORIES: List[str] = [
-    c.strip().upper() for c in os.getenv("GUARDRAIL_SKIP_CATEGORIES", "S7").split(",") if c.strip()
-]
-if len(GUARDRAIL_SKIP_CATEGORIES) > 4:
-    # Salvaguarda: ignorar muchas categorías (S1..S13) vacía de facto la Capa 8.
-    logging.getLogger(__name__).warning(
-        "[GUARDRAIL 8] GUARDRAIL_SKIP_CATEGORIES ignora %d categorías (%s); "
-        "revisa que no estés anulando la moderación de IA por config.",
-        len(GUARDRAIL_SKIP_CATEGORIES), ",".join(GUARDRAIL_SKIP_CATEGORIES),
-    )
-
 # Dominios PERMITIDOS: URLs bajo estos dominios NO se bloquean (el Estado ecuatoriano
 # usa *.gob.ec; el bot puede hablar de portales oficiales sin bloquearlos).
 # El chequeo es por sufijo de host exacto (host == dom o host termina en
@@ -341,13 +327,11 @@ URL_ALLOWLIST: tuple[str, ...] = (
 
 # Mensajes que son EXACTAMENTE una cédula pelada (10 dígitos) — atajo determinista.
 # El flujo del bot PIDE la cédula para registrar, así que el ciudadano responde con el
-# número solo. Ese mensaje disparaba DOS falsos positivos que rompían el registro:
-#   - Capa 8 (gpt-oss-safeguard): lo marcaba como S7-Privacy de forma NO determinista
-#     (~16%; el mismo formato a veces pasaba y a veces no).
+# número solo. Ese mensaje disparaba un falso positivo que rompía el registro:
 #   - Capa 5 (PII): una cédula de Guayas como "0912345678" matchea PHONE_EC y quedaba
 #     bloqueada de forma determinista (esa capa hoy está OFF por defecto, pero si se
 #     reactiva el registro se rompe para provincias con prefijo 09).
-# Por eso el atajo omite SOLO las capas 5, 7 y 8. Las capas 1-4 y 6 son regex que no
+# Por eso el atajo omite SOLO la capa 5. Las capas 1-4 y 6 son regex que no
 # pueden matchear un texto de puros dígitos: se siguen ejecutando (costo nulo) y así
 # el atajo no debilita nada.
 # ALCANCE ESTRICTO — exactamente 10 dígitos: es la cédula. Un RUC (13), una tarjeta
@@ -357,26 +341,6 @@ URL_ALLOWLIST: tuple[str, ...] = (
 # llegar igual al agente para que responda "No pude validar esa cédula" y pida
 # reintentar; bloquearlo aquí dejaría al ciudadano sin explicación.
 _SOLO_NUMERO = re.compile(r"^[\s\-\.]*\d[\d\s\-\.]*$")
-
-
-# Capas 7 y 8 (Groq): qué hacer si el servicio falla. false (default) = dejar pasar:
-# un menú de campaña no puede dejar sin respuesta a quien escribe "1" porque Groq
-# tiene un límite de uso (pasó en producción el 2026-10-22; la clave se comparte con
-# MAD). Las capas 1-6 son locales y siguen bloqueando. true = bloquear (fail-close).
-GUARDRAIL_FAIL_CLOSED = os.getenv("GUARDRAIL_FAIL_CLOSED", "false").strip().lower() in (
-    "1", "true", "yes", "on", "si", "sí",
-)
-
-# Respuestas triviales al menú: no hay forma de esconder un ataque en "1", "6." o "sí".
-_RESPUESTA_TRIVIAL = re.compile(
-    r"^\s*(?:\d{1,2}[.)]?|s[ií]|no|ok|dale|gracias|hola|buenas|listo|perfecto)\s*[.!]*\s*$",
-    re.IGNORECASE,
-)
-
-
-def _es_respuesta_trivial(texto: str) -> bool:
-    """True si el mensaje es una opción del menú o una palabra de cortesía."""
-    return bool(_RESPUESTA_TRIVIAL.match(texto))
 
 
 def _es_cedula_pelada(texto: str) -> bool:
@@ -443,7 +407,6 @@ class InputGuardrail:
     Orquestador de Seguridad del agente.
 
     Compila todos los patrones una sola vez al iniciar (más rápido).
-    Permite agregar capas 7 y 8 (LlamaGuard) cuando se tenga el código.
     """
 
     def __init__(self, custom_patterns: Optional[List[str]] = None):
@@ -457,16 +420,10 @@ class InputGuardrail:
         self._pii: Optional[object] = None
         self._init_pii()
 
-        # Capas 7 y 8: LlamaGuard (opcional, requiere GROQ_API_KEY)
-        self._safety: Optional[object] = None
-        self._init_llama_guard()
-
-        # Capas siempre activas: 1-4 y 6 (patrones). 5 (PII) y 7/8 (LlamaGuard) opcionales.
-        _base = 5  # capas 1,2,3,4,6
-        _activas = _base + (1 if self._pii is not None else 0) + (2 if self._safety is not None else 0)
-        logger.info("[GUARDRAIL] InputGuardrail inicializado — %d/8 capas activas "
-                    "(PII capa5=%s, LlamaGuard 7/8=%s)",
-                    _activas, "on" if self._pii else "off", "on" if self._safety else "off")
+        # Capas siempre activas: 1-4 y 6 (patrones). La 5 (PII) es opcional.
+        _activas = 5 + (1 if self._pii is not None else 0)
+        logger.info("[GUARDRAIL] InputGuardrail inicializado — %d/6 capas activas (PII capa5=%s)",
+                    _activas, "on" if self._pii else "off")
 
     def _init_pii(self) -> None:
         """Intenta cargar el detector de PII. Si falla, la capa queda desactivada.
@@ -488,19 +445,6 @@ class InputGuardrail:
             logger.info("[GUARDRAIL] Capa 5 — PII Detector activado (Cédula EC, RUC EC, Email, Teléfono EC)")
         except Exception as e:
             logger.warning(f"[GUARDRAIL] Capa 5 (PII) desactivada: {e}")
-
-    def _init_llama_guard(self) -> None:
-        """Intenta cargar HybridSafetyService. Si falla (sin GROQ_API_KEY), la capa queda desactivada."""
-        try:
-            from .llama_guard_service import get_llama_guard_service
-            service = get_llama_guard_service()
-            if service.groq_client:
-                self._safety = service
-                logger.info("[GUARDRAIL] Capas 7 y 8 — LlamaGuard activado (Groq)")
-            else:
-                logger.warning("[GUARDRAIL] Capas 7 y 8 (LlamaGuard) desactivadas: GROQ_API_KEY no encontrada")
-        except Exception as e:
-            logger.warning(f"[GUARDRAIL] Capas 7 y 8 (LlamaGuard) desactivadas: {e}")
 
     # ----------------------------------------------------------
     # Capa 1: Secret Keys
@@ -597,46 +541,6 @@ class InputGuardrail:
             logger.error(f"[GUARDRAIL 5] Error en PII detector: {e}")
         return False, ""
 
-    # ----------------------------------------------------------
-    # Capa 7: Llama Prompt Guard 2 — Jailbreak IA
-    # ----------------------------------------------------------
-    def _check_prompt_guard(self, texto: str) -> Tuple[bool, str]:
-        if self._safety is None:
-            logger.debug("[GUARDRAIL 7] Saltado — LlamaGuard no disponible (sin GROQ_API_KEY o error de init)")
-            return False, ""
-        try:
-            logger.info(f"[GUARDRAIL 7] Evaluando con Llama Prompt Guard 2...")
-            bloqueado, motivo = self._safety.validate_jailbreak(
-                texto, fail_close=GUARDRAIL_FAIL_CLOSED)
-            if not bloqueado:
-                logger.info("[GUARDRAIL 7] ✅ BENIGN — mensaje pasó Prompt Guard 2")
-            return bloqueado, motivo
-        except Exception as e:
-            logger.error(f"[GUARDRAIL 7] Error en Prompt Guard: {e}")
-            return False, ""
-
-    # ----------------------------------------------------------
-    # Capa 8: GPT-OSS-Safeguard 20B — NSFW / Hate / Violence / Self-Harm
-    # ----------------------------------------------------------
-    def _check_llama_guard(self, texto: str) -> Tuple[bool, str]:
-        if self._safety is None:
-            logger.debug("[GUARDRAIL 8] Saltado — LlamaGuard no disponible (sin GROQ_API_KEY o error de init)")
-            return False, ""
-        try:
-            logger.info(f"[GUARDRAIL 8] Evaluando con GPT-OSS-Safeguard 20B...")
-            bloqueado, motivo = self._safety.validate_toxicity(
-                texto, fail_close=GUARDRAIL_FAIL_CLOSED, skip_categories=GUARDRAIL_SKIP_CATEGORIES
-            )
-            if not bloqueado:
-                logger.info("[GUARDRAIL 8] ✅ SAFE — mensaje pasó GPT-OSS-Safeguard 20B")
-            return bloqueado, motivo
-        except Exception as e:
-            logger.error(f"[GUARDRAIL 8] Error en Llama Guard: {e}")
-            return False, ""
-
-    # ----------------------------------------------------------
-    # Capa 6: URL Filter
-    # ----------------------------------------------------------
     def _check_urls(self, texto: str) -> Tuple[bool, str]:
         # 0) Los CORREOS no son enlaces. El bot pide el correo en el registro de la
         #    bienvenida, y sin esto "maria@gmail.com" se leía como la URL "gmail.com"
@@ -676,34 +580,21 @@ class InputGuardrail:
         texto = mensaje.strip()
 
         # Atajo determinista para la cédula pelada que el propio bot pide (ver
-        # `_es_cedula_pelada`): omite SOLO las capas que dan falso positivo con ella
-        # (5 PII, 7 y 8 IA). Las capas 1-4 y 6 se siguen ejecutando.
+        # `_es_cedula_pelada`): omite SOLO la capa 5 (PII), que la confunde con un
+        # teléfono. Las capas 1-4 y 6 se siguen ejecutando.
         es_cedula = _es_cedula_pelada(texto)
         if es_cedula:
-            logger.debug("[GUARDRAIL] Cédula pelada — se omiten las capas 5, 7 y 8")
-        # Una opción del menú ("1") no necesita dos llamadas a Groq: es lo más frecuente
-        # que escribe la gente y lo que más se veía afectado por sus límites de uso.
-        es_trivial = _es_respuesta_trivial(texto)
-
-        omitir_si_cedula = (
-            self._check_pii,            # Capa 5: "0912345678" matchea PHONE_EC
-            self._check_prompt_guard,   # Capa 7: IA, no determinista
-            self._check_llama_guard,    # Capa 8: IA, marca la cédula como S7-Privacy
-        )
+            logger.debug("[GUARDRAIL] Cédula pelada — se omite la capa 5")
 
         for check in [
             self._check_secret_keys,       # Capa 1: Secret Keys
             self._check_prompt_injection,  # Capa 2: Prompt Injection (REGEX)
             self._check_toxic,             # Capa 3: Toxic Patterns (REGEX)
             self._check_custom,            # Capa 4: Custom Regex (ReDoS-safe)
-            self._check_pii,               # Capa 5: PII Detection (Presidio)
-            self._check_prompt_guard,      # Capa 7: Llama Prompt Guard 2 (Groq)
-            self._check_llama_guard,       # Capa 8: GPT-OSS-Safeguard 20B (Groq)
+            self._check_pii,               # Capa 5: PII Detection (opcional)
             self._check_urls,              # Capa 6: URL Filter (al final, más lento)
         ]:
-            if es_cedula and check in omitir_si_cedula:
-                continue
-            if es_trivial and check in (self._check_prompt_guard, self._check_llama_guard):
+            if es_cedula and check is self._check_pii:
                 continue
             bloqueado, motivo = check(texto)
             if bloqueado:

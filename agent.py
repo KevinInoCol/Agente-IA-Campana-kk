@@ -11,7 +11,8 @@ Este archivo solo ORQUESTA. Cada pieza vive en su carpeta:
   - Configuración del LLM      -> model_config/model_config.yaml
   - Tools                      -> tools/ (guardar_simpatizante)
   - Memoria de conversación    -> conversation_history/ (PostgresSaver, por thread_id)
-  - Guardrail de entrada       -> input_guardrails/ (middleware before_agent)
+  - Guardrail de entrada       -> input_guardrails/ (6 capas locales, before_agent)
+  - Model Armor (Google Cloud) -> guardrails_model_armor/ (APAGADO: falta la cuenta GCP)
   - Observabilidad             -> observabilty/ (Langfuse, trace por CallbackHandler)
 
 Sin RAG: todo lo que el agente puede decir del candidato es el guion del cliente,
@@ -40,6 +41,9 @@ from langchain.chat_models import init_chat_model
 from agent_context import ConversacionContext
 from conversation_history import get_checkpointer
 from input_guardrails import construir_middleware_guardrail
+# MODEL ARMOR (Google Cloud) — APAGADO hasta tener la cuenta de GCP. Para activarlo,
+# seguir guardrails_model_armor/README.md y descomentar esta línea y la de abajo.
+# from guardrails_model_armor import construir_middleware_model_armor
 from middleware import EstadoRegistroMiddleware
 from tools import guardar_simpatizante, registrar_ciudadano
 
@@ -148,10 +152,16 @@ def construir_agente():
         # misma tanda, y al revés: el prompt no puede nombrar una tool que no esté acá.
         tools=TOOLS_CABLEADAS,
         system_prompt=cargar_prompt(),
-        # 1) El guardrail corta inyecciones, toxicidad y secretos ANTES del LLM.
-        # 2) EstadoRegistro le dice al modelo qué datos ya tiene la persona en la base,
+        # 1) Guardrail LOCAL (6 capas, sin red): secretos, inyección, toxicidad, enlaces.
+        # 2) Model Armor (Google Cloud): reemplaza a las capas de IA de Groq. APAGADO
+        #    hasta tener la cuenta de GCP (ver guardrails_model_armor/README.md).
+        # 3) EstadoRegistro le dice al modelo qué datos ya tiene la persona en la base,
         #    para que pida solo los que faltan (pedido del cliente, guion v1).
-        middleware=[construir_middleware_guardrail(), EstadoRegistroMiddleware()],
+        middleware=[
+            construir_middleware_guardrail(),
+            # construir_middleware_model_armor(),
+            EstadoRegistroMiddleware(),
+        ],
         checkpointer=get_checkpointer(),
         context_schema=ConversacionContext,
     )
