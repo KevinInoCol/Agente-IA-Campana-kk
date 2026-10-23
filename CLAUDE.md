@@ -161,9 +161,13 @@ traerlo aquí, y al revés.
 
 ## Puntos a vigilar
 
-- **Latencia del guardrail.** Las capas 7 y 8 llaman a Groq. En una prueba, Groq
-  respondió con rate limit y su cliente esperó 20 s antes de reintentar. Si se repite en
-  producción, bajar los reintentos del cliente de Groq en
-  `input_guardrails/llama_guard_service.py`.
+- **Guardrail y Groq.** Las capas 7 y 8 consultan modelos en Groq con una clave que
+  se comparte con MAD. El 2026-10-22, en producción, un "1" del menú recibió "el
+  servicio de seguridad no está disponible": Groq falló y el guardrail estaba en
+  fail-close. Desde entonces:
+  - las respuestas triviales ("1", "sí", "gracias") no pasan por Groq;
+  - si Groq falla, el mensaje SIGUE (`GUARDRAIL_FAIL_CLOSED=false`, default); las
+    capas 1-6 son locales y siguen bloqueando;
+  - cliente de Groq con `timeout=8` y 1 reintento (antes podía esperar 20 s).
 - **Langfuse**: proyecto compartido con otras campañas. Las trazas van etiquetadas con
   `campana_toto_reyes`.

@@ -96,7 +96,9 @@ class HybridSafetyService:
             self.groq_api_key = os.getenv("GROQ_API_KEY")
 
             if self.groq_api_key:
-                self.groq_client = Groq(api_key=self.groq_api_key)
+                # Timeout corto y 1 reintento: sin esto, ante un límite de uso el SDK
+                # esperaba hasta 20 s antes de reintentar, con la persona esperando.
+                self.groq_client = Groq(api_key=self.groq_api_key, timeout=8.0, max_retries=1)
                 logger.info("[SAFETY] ✅ Groq client inicializado")
             else:
                 logger.warning("[SAFETY] ⚠️ GROQ_API_KEY no encontrada en el entorno")
@@ -168,6 +170,8 @@ class HybridSafetyService:
             if fail_close:
                 logger.error(f"[SAFETY] ❌ Fail-Close activado en Jailbreak check: {e}")
                 return True, "servicio_no_disponible"
+            logger.warning(f"[SAFETY] ⚠️ Jailbreak check no disponible ({type(e).__name__}); "
+                           "el mensaje sigue (fail-open).")
             return False, ""
 
     # ----------------------------------------------------------
@@ -244,6 +248,8 @@ class HybridSafetyService:
             if fail_close:
                 logger.error(f"[SAFETY] ❌ Fail-Close activado en Toxicity check: {e}")
                 return True, "servicio_no_disponible"
+            logger.warning(f"[SAFETY] ⚠️ Toxicity check no disponible ({type(e).__name__}); "
+                           "el mensaje sigue (fail-open).")
             return False, ""
 
     # ----------------------------------------------------------

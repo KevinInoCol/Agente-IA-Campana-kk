@@ -359,6 +359,26 @@ URL_ALLOWLIST: tuple[str, ...] = (
 _SOLO_NUMERO = re.compile(r"^[\s\-\.]*\d[\d\s\-\.]*$")
 
 
+# Capas 7 y 8 (Groq): qué hacer si el servicio falla. false (default) = dejar pasar:
+# un menú de campaña no puede dejar sin respuesta a quien escribe "1" porque Groq
+# tiene un límite de uso (pasó en producción el 2026-10-22; la clave se comparte con
+# MAD). Las capas 1-6 son locales y siguen bloqueando. true = bloquear (fail-close).
+GUARDRAIL_FAIL_CLOSED = os.getenv("GUARDRAIL_FAIL_CLOSED", "false").strip().lower() in (
+    "1", "true", "yes", "on", "si", "sí",
+)
+
+# Respuestas triviales al menú: no hay forma de esconder un ataque en "1", "6." o "sí".
+_RESPUESTA_TRIVIAL = re.compile(
+    r"^\s*(?:\d{1,2}[.)]?|s[ií]|no|ok|dale|gracias|hola|buenas|listo|perfecto)\s*[.!]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _es_respuesta_trivial(texto: str) -> bool:
+    """True si el mensaje es una opción del menú o una palabra de cortesía."""
+    return bool(_RESPUESTA_TRIVIAL.match(texto))
+
+
 def _es_cedula_pelada(texto: str) -> bool:
     """True si el mensaje es únicamente un número de 10 dígitos (la cédula).
 
@@ -586,7 +606,8 @@ class InputGuardrail:
             return False, ""
         try:
             logger.info(f"[GUARDRAIL 7] Evaluando con Llama Prompt Guard 2...")
-            bloqueado, motivo = self._safety.validate_jailbreak(texto, fail_close=True)
+            bloqueado, motivo = self._safety.validate_jailbreak(
+                texto, fail_close=GUARDRAIL_FAIL_CLOSED)
             if not bloqueado:
                 logger.info("[GUARDRAIL 7] ✅ BENIGN — mensaje pasó Prompt Guard 2")
             return bloqueado, motivo
@@ -604,7 +625,7 @@ class InputGuardrail:
         try:
             logger.info(f"[GUARDRAIL 8] Evaluando con GPT-OSS-Safeguard 20B...")
             bloqueado, motivo = self._safety.validate_toxicity(
-                texto, fail_close=True, skip_categories=GUARDRAIL_SKIP_CATEGORIES
+                texto, fail_close=GUARDRAIL_FAIL_CLOSED, skip_categories=GUARDRAIL_SKIP_CATEGORIES
             )
             if not bloqueado:
                 logger.info("[GUARDRAIL 8] ✅ SAFE — mensaje pasó GPT-OSS-Safeguard 20B")
@@ -660,6 +681,9 @@ class InputGuardrail:
         es_cedula = _es_cedula_pelada(texto)
         if es_cedula:
             logger.debug("[GUARDRAIL] Cédula pelada — se omiten las capas 5, 7 y 8")
+        # Una opción del menú ("1") no necesita dos llamadas a Groq: es lo más frecuente
+        # que escribe la gente y lo que más se veía afectado por sus límites de uso.
+        es_trivial = _es_respuesta_trivial(texto)
 
         omitir_si_cedula = (
             self._check_pii,            # Capa 5: "0912345678" matchea PHONE_EC
@@ -678,6 +702,8 @@ class InputGuardrail:
             self._check_urls,              # Capa 6: URL Filter (al final, más lento)
         ]:
             if es_cedula and check in omitir_si_cedula:
+                continue
+            if es_trivial and check in (self._check_prompt_guard, self._check_llama_guard):
                 continue
             bloqueado, motivo = check(texto)
             if bloqueado:
