@@ -54,7 +54,12 @@ from simpatizantes import apps_script, repositorio
 from smartgob_conecta import config as conecta_config
 from transcripcion import transcribir_audio
 
-APP_VERSION = os.getenv("APP_VERSION", "dev")
+# Versión del agente (sube con cada cambio de comportamiento) y marcador de BUILD para
+# verificar qué corre en producción tras un deploy. Se ven en GET / y GET /health. El
+# build se puede sobreescribir con la env APP_VERSION; si no, subir el default en cada
+# commit que se despliegue.
+VERSION = "1.2.0"
+APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.1-raiz-y-dinardap")
 
 # Cuánto se recuerda un evento ya procesado (Conecta reintenta con espera exponencial).
 DEDUP_TTL_SECONDS = 24 * 3600
@@ -120,22 +125,33 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Agente WhatsApp · Toto Reyes",
     description="Asistente de la campaña de Juan José Reyes Baquerizo (SmartGob Conecta).",
-    version=APP_VERSION,
+    version=VERSION,
     lifespan=lifespan,
 )
 
 
-@app.get("/", tags=["Agente"])
+@app.get("/", summary="Información del servicio", tags=["Agente"])
 def raiz() -> dict:
-    return {"servicio": "agente-toto-reyes", "version": APP_VERSION,
-            "webhook": "/webhook/conecta"}
+    """Endpoint raíz: identifica el servicio y lista los endpoints disponibles."""
+    return {
+        "servicio": "Toto Reyes · Concejal — API del Asistente",
+        "version": VERSION,
+        "build": APP_VERSION,
+        "esquema_bd": TENANT or None,
+        "endpoints": {
+            "GET /": "esta información",
+            "GET /health": "estado del servicio",
+            "POST /webhook/conecta": "recibe un mensaje de SmartGob Conecta y responde",
+        },
+    }
 
 
 @app.get("/health", tags=["Agente"])
 def health() -> dict:
     return {
         "status": "ok",
-        "version": APP_VERSION,
+        "version": VERSION,
+        "build": APP_VERSION,
         "tenant": TENANT or None,
         "tools": [t.name for t in TOOLS_CABLEADAS],
         "conecta": {"configurado": conecta_config.esta_configurado(),
