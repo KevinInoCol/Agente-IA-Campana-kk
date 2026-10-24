@@ -65,8 +65,8 @@ main.py                  CLI
 main_conecta.py          FastAPI: webhook de Conecta (firma HMAC) -> debounce -> agente -> POST /messages
 model_config/            parámetros del LLM (gpt-6.1-sol, reasoning low, Responses API; desde 2026-10-24)
 prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
-tools/                   registro_tool (5 tools, F02-F06) + colaboracion_tool (2 tools, F09-F12); buscar_conocimiento (SIN cablear)
-middleware/              EstadoRegistro: agrega <terminos> y <estado_del_registro> al system prompt en cada llamada
+tools/                   registro_tool (4 tools, F03-F06) + colaboracion_tool (2 tools, F09-F12); buscar_conocimiento (SIN cablear)
+middleware/              EstadoRegistro: agrega <estado_del_registro> al system prompt en cada llamada
 dominio/                 cédula y correo (de MAD), teléfono, orden del registro
 integraciones/persona/   consulta al registro civil (DINARDAP vía ventanilla)        (de MAD)
 rag/rag.py               ingesta de la Ayuda Memoria a Qdrant (rag/data/, no versionado) (de MAD)
@@ -179,6 +179,24 @@ son obligatorios; a qué teléfono
 se contacta; cómo consulta el equipo (acceso a Postgres o vista en SmartConecta); vía
 real para atención humana, corrección y borrado de datos. Mientras tanto el bot dice
 con claridad que eso no se puede hacer desde el chat.
+
+## El modelo: `gpt-6.1-sol` por la Responses API (desde 2026-10-24)
+
+Recorrido del día: gpt-4.1 → gpt-5.1 → gpt-5.6-terra → gpt-5.6-sol → gpt-6-sol → gpt-6.1-sol. No basta con cambiar el nombre en `model_config.yaml`:
+
+- **Razona siempre.** No acepta `reasoning_effort: none` ni `temperature`; va con
+  `low`. `agent.py` solo pasa a `init_chat_model` las opciones que el yaml declara.
+- **Chat Completions no sirve:** ahí las tools solo funcionan con razonamiento
+  `none`. Por eso `use_responses_api: true`.
+- **El `content` del `AIMessage` es una LISTA de bloques** (razonamiento + texto).
+  La respuesta se lee con `.text`; leer `.content` mandaría basura al ciudadano.
+- **El razonamiento cuenta dentro de `max_tokens`.** Con un tope bajo la respuesta
+  se corta y `.text` llega vacío: por eso `max_tokens: 4096` y, si no hay texto, se
+  manda `MENSAJE_ERROR` en vez de nada.
+- Hilos empezados con el modelo anterior siguen funcionando. **Sin probar:** hilos
+  de semanas, porque el checkpoint guarda bloques de razonamiento (`rs_…`) que se
+  reenvían en cada turno. Si un chat largo empieza a fallar, mirar ahí primero.
+- Latencia: 2-3 s en turnos simples, 5-7 s con tools (gpt-4.1 era más rápido).
 
 ## Puntos a vigilar
 
