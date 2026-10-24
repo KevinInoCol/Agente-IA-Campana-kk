@@ -1,22 +1,26 @@
 """
-Middleware: le dice al modelo qué datos del registro ya tiene la persona.
-=========================================================================
+Middleware: le dice al modelo en qué paso del registro está la persona.
+=======================================================================
 
-El cliente pidió que el bot pida SOLO los datos que faltan ("ya lo tendrían en bd").
-El modelo no puede saberlo por sí mismo: la memoria de la conversación no sabe qué hay
-en la base, y una persona registrada ayer puede volver hoy. Por eso, ANTES de cada
-llamada al modelo se consulta `ciudadanos` por el número de WhatsApp (que pone el
-canal en el contexto) y se agrega al system prompt un bloque `<estado_del_registro>`.
+El flujo v2 del cliente (Flujo_Agente_Juan_Jose.docx) es un recorrido con orden fijo:
+términos -> cédula -> nombres -> correo -> teléfono -> barrio -> resumen -> menú. El
+modelo no puede saber en qué paso está una persona: la memoria de la conversación no
+sabe qué hay en la base, y alguien que dejó el registro a medias ayer puede volver
+hoy. Por eso, ANTES de cada llamada al modelo se consulta la base por el número de
+WhatsApp (que pone el canal en el contexto) y se agregan al system prompt dos bloques:
+
+  <terminos>             el enlace y la finalidad aprobados (o que no están configurados)
+  <estado_del_registro>  paso pendiente, datos guardados y colaboración en borrador
 
 Se consulta en CADA llamada al modelo, no una vez por mensaje: si en el mismo turno
-la tool `registrar_ciudadano` acaba de guardar, la siguiente llamada ya lo ve.
+una tool acaba de guardar, la siguiente llamada ya lo ve.
 
-La cédula NO se pasa al modelo: solo si está registrada o no. El modelo no la
-necesita para nada y así no vuelve a aparecer en las respuestas.
+La cédula NO se pasa al modelo. Correo y teléfono de contacto van enmascarados: el
+modelo solo los necesita para el resumen, que los muestra así.
 
 Patrón oficial de LangChain v1 (verificado con el MCP docs-langchain, 2026-10-22):
 `AgentMiddleware.wrap_model_call` + `request.override(system_message=...)`, agregando
-un bloque a `request.system_message.content_blocks`.
+bloques a `request.system_message.content_blocks`.
 """
 
 from __future__ import annotations
@@ -27,45 +31,94 @@ from typing import Callable
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain.messages import SystemMessage
 
+from dominio import registro as paso
+from dominio import terminos
+from dominio.telefono import enmascarar_correo, enmascarar_telefono
 from simpatizantes import repositorio
 
 logger = logging.getLogger(__name__)
 
+_QUE_PEDIR = {
+    paso.TERMINOS: "mostrar los términos y pedir que los acepte (F02)",
+    paso.CEDULA: "pedir el número de cédula (F03)",
+    paso.CONFIRMAR_NOMBRES: "preguntar si los nombres recuperados son correctos (F04)",
+    paso.CORREO: "pedir el correo electrónico (F05)",
+    paso.TELEFONO: "pedir el teléfono de contacto (F05)",
+    paso.BARRIO: "pedir el barrio o sector (F05)",
+    paso.REVISAR_PERFIL: "mostrar el resumen de datos y pedir que los confirme (F06)",
+    paso.COMPLETO: "nada: el registro está completo y el menú está habilitado",
+}
 
-def describir_estado(registro: dict | None, consultado: bool = True) -> str:
+
+def describir_terminos() -> str:
+    """Bloque <terminos> con el texto aprobado, o el aviso de que falta."""
+    if terminos.esta_configurado():
+        texto = (f"enlace_privacidad: {terminos.PRIVACIDAD_ENLACE}\n"
+                 f"finalidad_aprobada: {terminos.PRIVACIDAD_FINALIDAD}")
+    else:
+        texto = ("NO CONFIGURADOS. Falta el texto aprobado de términos y privacidad: el "
+                 "registro está deshabilitado. Responde REGISTRO_NO_DISPONIBLE.")
+    return f"<terminos>\n{texto}\n</terminos>"
+
+
+def describir_estado(registro: dict | None, borrador: dict | None = None,
+                     consultado: bool = True) -> str:
     """Texto del bloque <estado_del_registro> (función pura, testeable)."""
     if not consultado:
-        estado = ("No se pudo consultar el registro en este momento. Trátala como no "
-                  "registrada, pero no insistas si dice que ya se registró.")
-    elif not registro:
-        estado = ("La persona NO está registrada. Faltan: cédula, nombres completos, "
-                  "barrio y correo (opcional).")
+        estado = ("No se pudo consultar el registro en este momento. No pidas datos ni "
+                  "abras el menú: dile que hay un problema temporal y que lo intente en "
+                  "unos minutos.")
+        return f"<estado_del_registro>\n{estado}\n</estado_del_registro>"
+
+    r = registro or {}
+    siguiente = paso.siguiente_paso(r)
+    lineas = [f"paso_pendiente: {siguiente} -> {_QUE_PEDIR[siguiente]}"]
+
+    if r.get("terminos_aceptados") is True:
+        lineas.append("terminos: aceptados")
+    elif r.get("terminos_aceptados") is False:
+        lineas.append("terminos: NO aceptados (la persona los rechazó antes)")
     else:
-        tiene = []
-        faltan = []
-        if registro.get("cedula"):
-            tiene.append("cédula registrada (el número no se muestra)")
-        else:
-            faltan.append("cédula")
-        for clave, nombre in (("nombres", "nombres"), ("barrio", "barrio")):
-            if registro.get(clave):
-                tiene.append(f"{nombre}: {registro[clave]}")
-            else:
-                faltan.append(nombre)
-        if registro.get("correo"):
-            tiene.append("correo registrado")
-        else:
-            faltan.append("correo (opcional)")
-        completo = all(registro.get(k) for k in ("cedula", "nombres", "barrio"))
-        estado = ("La persona YA está registrada. " if completo
-                  else "Registro INCOMPLETO. ") + "Datos guardados: " + "; ".join(tiene) + "."
-        if faltan:
-            estado += " Faltan: " + ", ".join(faltan) + "."
-    return f"<estado_del_registro>\n{estado}\n</estado_del_registro>"
+        lineas.append("terminos: sin responder")
+
+    if r.get("cedula") and not r.get("nombres"):
+        lineas.append("cedula: guardada de un registro anterior, sin consultar en el registro "
+                      "civil (llama a consultar_cedula con cedula vacía)")
+    elif r.get("cedula"):
+        lineas.append("cedula: guardada (el número no se muestra)")
+    if r.get("nombres"):
+        estado_nombres = "confirmados" if r.get("nombres_confirmados") else "SIN confirmar"
+        lineas.append(f"nombre_completo: {paso.nombre_para_mostrar(r['nombres'])} "
+                      f"({estado_nombres})")
+        lineas.append(f"nombre: {paso.nombre_de_pila(r['nombres'])}")
+    if r.get("correo"):
+        lineas.append(f"correo_enmascarado: {enmascarar_correo(r['correo'])}")
+    if r.get("telefono_contacto"):
+        lineas.append(f"telefono_enmascarado: {enmascarar_telefono(r['telefono_contacto'])}")
+    if r.get("barrio"):
+        lineas.append(f"barrio: {r['barrio']}")
+
+    if borrador:
+        lineas.append(f"colaboracion_en_borrador: «{borrador['ayuda']}» (preparada, SIN "
+                      "confirmar: ofrece retomarla mostrando su resumen)")
+    return "<estado_del_registro>\n" + "\n".join(lineas) + "\n</estado_del_registro>"
+
+
+def _consultar(telefono: str | None) -> str:
+    if not telefono or not repositorio.esta_configurado():
+        # Sin número (CLI sin --telefono) o sin base: no hay registro que consultar.
+        return describir_estado(None)
+    try:
+        registro = repositorio.buscar_ciudadano(telefono)
+        borrador = repositorio.obtener_borrador(telefono) if registro else None
+        return describir_estado(registro, borrador)
+    except Exception:  # noqa: BLE001 — nunca dejar a la persona sin respuesta
+        logger.exception("No se pudo consultar el registro del ciudadano")
+        return describir_estado(None, consultado=False)
 
 
 class EstadoRegistroMiddleware(AgentMiddleware):
-    """Agrega <estado_del_registro> al system prompt antes de cada llamada al modelo."""
+    """Agrega <terminos> y <estado_del_registro> al system prompt en cada llamada."""
 
     def wrap_model_call(
         self,
@@ -73,16 +126,6 @@ class EstadoRegistroMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
         contexto = getattr(request.runtime, "context", None)
-        telefono = getattr(contexto, "telefono", None)
-        if not telefono or not repositorio.esta_configurado():
-            # Sin número (CLI sin --telefono) o sin base: no hay registro que consultar.
-            texto = describir_estado(None)
-        else:
-            try:
-                texto = describir_estado(repositorio.buscar_ciudadano(telefono))
-            except Exception:  # noqa: BLE001 — nunca dejar a la persona sin respuesta
-                logger.exception("No se pudo consultar el registro del ciudadano")
-                texto = describir_estado(None, consultado=False)
-
+        texto = describir_terminos() + "\n\n" + _consultar(getattr(contexto, "telefono", None))
         bloques = list(request.system_message.content_blocks) + [{"type": "text", "text": texto}]
         return handler(request.override(system_message=SystemMessage(content=bloques)))

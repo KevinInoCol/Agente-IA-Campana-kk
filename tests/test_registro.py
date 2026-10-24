@@ -1,31 +1,39 @@
-"""Registro de la bienvenida (guion v1): validación, combinación con lo guardado y estado.
+"""Registro inicial del flujo v2 (F02 a F07): dominio, tools sin LLM y estado del modelo.
 
-Los tests de `integracion` escriben en la base de `DATABASE_URL` (en local, el Postgres
-de docker-compose.dev.yml) y se saltan si no responde.
+Los tests de integración escriben en la base de `DATABASE_URL` y se saltan si no
+responde. ⚠️ Con el `.env` actual eso es el Supabase real: correrlos con
+`DATABASE_URL` apuntando al Postgres de docker-compose.dev.yml.
 """
 
 import pytest
 
+from dominio import registro as paso
 from dominio.correo import normalizar_email
 from dominio.identidad import validar_cedula
+from dominio.telefono import enmascarar_correo, enmascarar_telefono, normalizar_telefono
 from input_guardrails.input_guardrail import _guardrail
 from middleware import describir_estado
+from middleware.estado_registro import describir_terminos
 from simpatizantes import repositorio
-from tools import registrar_ciudadano
-from tools.registro_tool import registrar_datos
+from tools import (
+    aceptar_terminos,
+    confirmar_nombres,
+    confirmar_perfil,
+    consultar_cedula,
+    guardar_datos_contacto,
+)
+from tools.registro_tool import (
+    guardar_contacto,
+    responder_nombres,
+    responder_perfil,
+    responder_terminos,
+    verificar_cedula,
+)
 
-# Cédula sintética válida (provincia 09, módulo 10); no es de nadie.
-CEDULA = "0915450001"
-
-
-def _base_disponible() -> bool:
-    if not repositorio.esta_configurado():
-        return False
-    try:
-        repositorio._get_pool()
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+# Cédulas sintéticas válidas (provincia 09, módulo 10); no son de nadie.
+CEDULA = "0915450001"        # está en fixtures_personas.json (stub)
+NO_EXISTE = "0915450019"     # válida pero no está en los fixtures
+TEL = "593900000001"
 
 
 # --- Dominio ------------------------------------------------------------------
@@ -45,100 +53,274 @@ def test_correo():
     assert normalizar_email("sin arroba") is None
 
 
-# --- Tool (sin base: repositorio simulado) -------------------------------------
+@pytest.mark.parametrize("texto,esperado", [
+    ("099 123 4567", "593991234567"),
+    ("+593 99 123 4567", "593991234567"),
+    ("593991234567", "593991234567"),
+    ("04 2345678", "59342345678"),
+    ("+51 987 654 321", "51987654321"),
+    ("12345", None),
+    ("0012", None),
+    ("hola", None),
+])
+def test_telefono(texto, esperado):
+    assert normalizar_telefono(texto) == esperado
+
+
+def test_mascaras():
+    assert enmascarar_telefono("593991234567") == "*********567"
+    assert enmascarar_correo("carlos.mora@gmail.com") == "c***@gmail.com"
+
+
+def test_orden_de_pasos():
+    r = {}
+    assert paso.siguiente_paso(r) == paso.TERMINOS
+    r["terminos_aceptados"] = False
+    assert paso.siguiente_paso(r) == paso.TERMINOS
+    r["terminos_aceptados"] = True
+    assert paso.siguiente_paso(r) == paso.CEDULA
+    r.update(cedula=CEDULA, nombres="MORA PEREZ ANA LUCIA")
+    assert paso.siguiente_paso(r) == paso.CONFIRMAR_NOMBRES
+    r["nombres_confirmados"] = True
+    assert paso.siguiente_paso(r) == paso.CORREO
+    r["correo"] = "a@b.ec"
+    assert paso.siguiente_paso(r) == paso.TELEFONO
+    r["telefono_contacto"] = "593991234567"
+    assert paso.siguiente_paso(r) == paso.BARRIO
+    r["barrio"] = "Urdesa"
+    assert paso.siguiente_paso(r) == paso.REVISAR_PERFIL
+    r["registro_confirmado_en"] = "2026-10-24"
+    assert paso.siguiente_paso(r) == paso.COMPLETO
+
+
+def test_nombres_de_la_dinardap():
+    # La fuente entrega "APELLIDOS NOMBRES".
+    assert paso.nombre_de_pila("MORA PEREZ ANA LUCIA") == "Ana"
+    assert paso.nombre_de_pila("MORA ANA") == "Mora"
+    assert paso.nombre_para_mostrar("MORA PEREZ ANA LUCIA") == "Mora Perez Ana Lucia"
+
+
+# --- F02 términos ---------------------------------------------------------------
+
+def test_sin_terminos_configurados_no_registra(repo, monkeypatch):
+    from dominio import terminos
+    monkeypatch.setattr(terminos, "PRIVACIDAD_ENLACE", "")
+    r = responder_terminos(True, TEL)
+    assert not r["ok"] and r["error"] == "TERMINOS_NO_CONFIGURADOS"
+    assert TEL not in repo.ciudadanos
+
+
+def test_acepta_terminos(repo, con_terminos):
+    r = responder_terminos(True, TEL, nombre_perfil="Ana")
+    assert r["ok"] and r["siguiente_paso"] == paso.CEDULA
+    assert repo.ciudadanos[TEL]["terminos_aceptados"] is True
+    assert repo.ciudadanos[TEL]["terminos_version"] == "v1"
+
+
+def test_no_acepta_terminos(repo, con_terminos):
+    r = responder_terminos(False, TEL)
+    assert r["ok"] and r["siguiente_paso"] == paso.TERMINOS
+    assert repo.ciudadanos[TEL]["terminos_aceptados"] is False
+
+
+def test_sin_terminos_no_se_guarda_ningun_dato(repo, con_terminos, fuente):
+    assert verificar_cedula(CEDULA, TEL)["error"] == "TERMINOS_PENDIENTES"
+    assert guardar_contacto(TEL, correo="a@b.ec")["error"] == "TERMINOS_PENDIENTES"
+    assert TEL not in repo.ciudadanos
+
+
+def test_sin_telefono(repo, con_terminos):
+    assert responder_terminos(True, None)["error"] == "SIN_TELEFONO"
+
+
+# --- F03/F04 cédula y nombres ---------------------------------------------------
 
 @pytest.fixture
-def base_simulada(monkeypatch):
-    filas = {}
-
-    def buscar(tel):
-        return dict(filas[tel]) if tel in filas else None
-
-    def guardar(c):
-        nuevo = c.telefono not in filas
-        filas[c.telefono] = {"cedula": c.cedula, "nombres": c.nombres,
-                             "correo": c.correo, "barrio": c.barrio,
-                             "cedula_verificada": c.cedula_verificada}
-        return 1, nuevo
-
-    monkeypatch.setattr(repositorio, "esta_configurado", lambda: True)
-    monkeypatch.setattr(repositorio, "buscar_ciudadano", buscar)
-    monkeypatch.setattr(repositorio, "guardar_ciudadano", guardar)
-    return filas
+def acepto(repo, con_terminos):
+    responder_terminos(True, TEL)
+    return repo
 
 
-def test_registro_completo(base_simulada):
-    r = registrar_datos(cedula=CEDULA, nombres="maría fernanda lópez", correo="Ana@Gmail.com",
-                        barrio="Urdesa", telefono="593900000001")
-    assert r["ok"] and r["registro_completo"] and r["nuevo"] and r["nombre"] == "María"
-    assert base_simulada["593900000001"]["correo"] == "ana@gmail.com"
+def test_cedula_existe_devuelve_nombres_sin_confirmar(acepto, fuente):
+    r = verificar_cedula("091-545-0001", TEL)
+    assert r["ok"] and r["nombre_completo"] == "Prueba Sintetica Maria Fernanda"
+    assert r["siguiente_paso"] == paso.CONFIRMAR_NOMBRES
+    fila = acepto.ciudadanos[TEL]
+    assert fila["cedula"] == CEDULA and fila["cedula_verificada"] is True
+    assert fila["nombres_confirmados"] is False
 
 
-def test_por_partes_guarda_cada_dato_y_acumula(base_simulada):
-    r = registrar_datos(nombres="Carlos Mora", barrio="Guasmo", telefono="593900000002")
-    assert r["ok"] and not r["registro_completo"] and "cedula" in r["faltan"]
-    assert base_simulada["593900000002"]["barrio"] == "Guasmo"   # guardado a medias
-    r = registrar_datos(cedula=CEDULA, telefono="593900000002")  # solo el dato nuevo
-    assert r["ok"] and r["registro_completo"] and r["faltan"] == ["correo (opcional)"]
-    assert base_simulada["593900000002"]["nombres"] == "Carlos Mora"
+def test_cedula_invalida_no_consulta(acepto, fuente, monkeypatch):
+    from integraciones.persona import adaptador
+    monkeypatch.setattr(adaptador, "consultar_persona", lambda *a, **k: pytest.fail("red"))
+    assert verificar_cedula("0915450002", TEL)["error"] == "CEDULA_INVALIDA"
 
 
-def test_sin_telefono_exige_el_registro_completo(base_simulada):
-    r = registrar_datos(nombres="Carlos Mora")
-    assert not r["ok"] and not base_simulada
+def test_cedula_no_existe_no_se_guarda(acepto, fuente):
+    r = verificar_cedula(NO_EXISTE, TEL)
+    assert not r["ok"] and r["error"] == "CEDULA_NO_EXISTE"
+    assert not acepto.ciudadanos[TEL].get("cedula")
 
 
-def test_completar_un_registro_existente_conserva_lo_guardado(base_simulada):
-    registrar_datos(cedula=CEDULA, nombres="Carlos Mora", barrio="Guasmo", telefono="t1")
-    r = registrar_datos(correo="carlos@outlook.es", telefono="t1")
-    assert r["ok"] and not r["nuevo"]
-    assert base_simulada["t1"] == {"cedula": CEDULA, "nombres": "Carlos Mora",
-                                   "correo": "carlos@outlook.es", "barrio": "Guasmo",
-                                   "cedula_verificada": None}
+def test_dinardap_apagada_no_registra(acepto, fuente):
+    fuente("ninguna")
+    r = verificar_cedula(CEDULA, TEL)
+    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and not acepto.ciudadanos[TEL].get("cedula")
 
 
-def test_cedula_invalida_no_se_guarda_pero_el_resto_si(base_simulada):
-    r = registrar_datos(cedula="0915450002", nombres="Ana", barrio="Centro", telefono="t2")
-    assert r["ok"] and not r["registro_completo"] and r["error"] == "CEDULA_INVALIDA"
-    assert base_simulada["t2"]["cedula"] is None and base_simulada["t2"]["nombres"] == "Ana"
+def test_dinardap_caida_no_registra(acepto, fuente, monkeypatch):
+    import httpx
+    from integraciones.persona import adaptador
+    fuente("ventanilla")
+    monkeypatch.setattr(adaptador, "VENTANILLA_USER", "u")
+    monkeypatch.setattr(adaptador, "VENTANILLA_PASSWORD", "p")
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectTimeout("x")))
+    r = verificar_cedula(CEDULA, TEL)
+    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and not acepto.ciudadanos[TEL].get("cedula")
 
 
-def test_solo_una_cedula_invalida_no_guarda_nada(base_simulada):
-    r = registrar_datos(cedula="0915450002", telefono="t4")
-    assert not r["ok"] and r["error"] == "CEDULA_INVALIDA" and "t4" not in base_simulada
+def test_cedula_vacia_usa_la_guardada_del_guion_v1(acepto, fuente):
+    acepto.ciudadanos[TEL].update(cedula=CEDULA, nombres=None)     # registro viejo
+    r = verificar_cedula("", TEL)
+    assert r["ok"] and r["nombre_completo"]
 
 
-def test_correo_invalido_no_impide_el_registro(base_simulada):
-    r = registrar_datos(cedula=CEDULA, nombres="Ana", barrio="Centro", correo="ana@",
-                        telefono="t3")
-    assert r["ok"] and r["error"] == "CORREO_INVALIDO"
+def test_confirmar_nombres(acepto, fuente):
+    verificar_cedula(CEDULA, TEL)
+    r = responder_nombres(True, TEL)
+    assert r["ok"] and r["siguiente_paso"] == paso.CORREO and r["nombre"] == "Maria"
 
 
-def test_sin_base(monkeypatch):
-    monkeypatch.setattr(repositorio, "esta_configurado", lambda: False)
-    assert not registrar_datos(cedula=CEDULA, nombres="Ana", barrio="Centro")["ok"]
+def test_revisar_cedula_descarta_cedula_y_nombres(acepto, fuente):
+    verificar_cedula(CEDULA, TEL)
+    r = responder_nombres(False, TEL)
+    assert r["siguiente_paso"] == paso.CEDULA
+    assert acepto.ciudadanos[TEL]["cedula"] is None and acepto.ciudadanos[TEL]["nombres"] is None
 
 
-def test_el_telefono_no_es_argumento_de_la_tool():
-    assert set(registrar_ciudadano.args) == {"cedula", "nombres", "correo", "barrio"}
+def test_confirmar_nombres_sin_consulta(acepto):
+    assert responder_nombres(True, TEL)["error"] == "SIN_NOMBRES_PENDIENTES"
+
+
+# --- F05/F06 contacto y resumen ---------------------------------------------------
+
+@pytest.fixture
+def identificado(acepto, fuente):
+    verificar_cedula(CEDULA, TEL)
+    responder_nombres(True, TEL)
+    return acepto
+
+
+def test_contacto_por_partes_y_en_orden(identificado):
+    r = guardar_contacto(TEL, correo="Ana@Gmail.com", barrio="Urdesa")
+    assert r["ok"] and r["siguiente_paso"] == paso.TELEFONO
+    r = guardar_contacto(TEL, telefono_contacto="099 123 4567")
+    assert r["siguiente_paso"] == paso.REVISAR_PERFIL
+    assert r["resumen"] == {"nombre_completo": "Prueba Sintetica Maria Fernanda",
+                            "correo_enmascarado": "a***@gmail.com",
+                            "telefono_enmascarado": "*********567", "barrio": "Urdesa"}
+
+
+def test_usar_el_numero_de_whatsapp(identificado):
+    guardar_contacto(TEL, usar_whatsapp=True)
+    assert identificado.ciudadanos[TEL]["telefono_contacto"] == TEL
+
+
+def test_dato_invalido_conserva_los_validos(identificado):
+    r = guardar_contacto(TEL, correo="sin arroba", telefono_contacto="12", barrio="Centro")
+    assert r["ok"] and "CORREO_INVALIDO" in r["error"] and "TELEFONO_INVALIDO" in r["error"]
+    assert identificado.ciudadanos[TEL]["barrio"] == "Centro"
+    assert r["siguiente_paso"] == paso.CORREO
+
+
+def test_solo_un_dato_invalido(identificado):
+    r = guardar_contacto(TEL, correo="mal")
+    assert not r["ok"] and r["error"] == "CORREO_INVALIDO"
+
+
+@pytest.fixture
+def perfil_completo(identificado):
+    guardar_contacto(TEL, correo="ana@gmail.com", telefono_contacto="0991234567",
+                     barrio="Urdesa")
+    return identificado
+
+
+def test_confirmar_perfil(perfil_completo):
+    r = responder_perfil(True, TEL)
+    assert r["ok"] and r["siguiente_paso"] == paso.COMPLETO and r["nombre"] == "Maria"
+
+
+def test_confirmar_perfil_incompleto(identificado):
+    assert responder_perfil(True, TEL)["error"] == "PERFIL_INCOMPLETO"
+
+
+def test_corregir_un_dato_pide_revisar_el_resumen_otra_vez(perfil_completo):
+    responder_perfil(True, TEL)
+    r = guardar_contacto(TEL, barrio="Guasmo")
+    assert r["siguiente_paso"] == paso.REVISAR_PERFIL
+
+
+def test_repetir_el_mismo_dato_no_deshace_la_confirmacion(perfil_completo):
+    responder_perfil(True, TEL)
+    assert guardar_contacto(TEL, barrio="Urdesa")["siguiente_paso"] == paso.COMPLETO
+
+
+def test_cancelar_registro_borra_los_datos(perfil_completo):
+    r = responder_perfil(False, TEL)
+    assert r["ok"] and r["registro_cancelado"] and TEL not in perfil_completo.ciudadanos
+
+
+def test_la_cedula_no_vuelve_al_modelo_ni_a_los_logs(perfil_completo, caplog):
+    with caplog.at_level("DEBUG"):
+        r = verificar_cedula(CEDULA, TEL)
+        verificar_cedula(NO_EXISTE, TEL)
+    assert CEDULA not in str(r) and CEDULA not in caplog.text and NO_EXISTE not in caplog.text
+
+
+def test_el_telefono_de_whatsapp_no_es_argumento_de_ninguna_tool():
+    assert set(aceptar_terminos.args) == {"acepta"}
+    assert set(consultar_cedula.args) == {"cedula"}
+    assert set(confirmar_nombres.args) == {"correctos"}
+    assert set(guardar_datos_contacto.args) == {"correo", "telefono", "usar_whatsapp", "barrio"}
+    assert set(confirmar_perfil.args) == {"confirma"}
 
 
 # --- Estado que ve el modelo ----------------------------------------------------
 
-def test_estado_no_registrado():
-    assert "NO está registrada" in describir_estado(None)
+def test_estado_sin_registro():
+    texto = describir_estado(None)
+    assert "paso_pendiente: TERMINOS" in texto and "sin responder" in texto
 
 
-def test_estado_registrado_no_muestra_la_cedula():
-    texto = describir_estado({"cedula": CEDULA, "nombres": "Ana López", "correo": None,
+def test_estado_no_muestra_la_cedula_ni_datos_completos():
+    texto = describir_estado({"terminos_aceptados": True, "cedula": CEDULA,
+                              "nombres": "MORA PEREZ ANA LUCIA", "nombres_confirmados": True,
+                              "correo": "ana@gmail.com", "telefono_contacto": "593991234567",
                               "barrio": "Urdesa"})
-    assert "YA está registrada" in texto and CEDULA not in texto
-    assert "Ana López" in texto and "correo (opcional)" in texto
+    assert "REVISAR_PERFIL" in texto and CEDULA not in texto
+    assert "ana@gmail.com" not in texto and "a***@gmail.com" in texto
+    assert "593991234567" not in texto and "nombre: Ana" in texto
 
 
-def test_estado_incompleto():
-    texto = describir_estado({"cedula": None, "nombres": "Ana", "correo": None, "barrio": None})
-    assert "INCOMPLETO" in texto and "cédula" in texto and "barrio" in texto
+def test_estado_cedula_vieja_sin_consultar():
+    texto = describir_estado({"terminos_aceptados": True, "cedula": CEDULA})
+    assert "cedula vacía" in texto and CEDULA not in texto
+
+
+def test_estado_con_borrador():
+    texto = describir_estado({"terminos_aceptados": False}, {"id": 1, "ayuda": "Voluntaria"})
+    assert "NO aceptados" in texto and "Voluntaria" in texto
+
+
+def test_estado_sin_consultar():
+    assert "problema temporal" in describir_estado(None, consultado=False)
+
+
+def test_bloque_terminos(monkeypatch, con_terminos):
+    assert "https://ejemplo.ec/privacidad" in describir_terminos()
+    from dominio import terminos
+    monkeypatch.setattr(terminos, "PRIVACIDAD_FINALIDAD", "")
+    assert "NO CONFIGURADOS" in describir_terminos()
 
 
 # --- Guardrail: un correo no es un enlace ---------------------------------------
@@ -158,17 +340,30 @@ def test_enlace_junto_a_un_correo_se_sigue_bloqueando():
 
 # --- Integración con Postgres ----------------------------------------------------
 
-@pytest.mark.skipif(not _base_disponible(), reason="Postgres local no disponible")
-def test_integracion_upsert_por_telefono():
+def _base_disponible() -> bool:
+    if not repositorio.esta_configurado():
+        return False
+    try:
+        repositorio._get_pool()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@pytest.mark.skipif(not _base_disponible(), reason="Postgres no disponible")
+def test_integracion_registro_completo(con_terminos, fuente):
     tel = "593900000777"
     try:
-        r1 = registrar_datos(cedula=CEDULA, nombres="Prueba Test", barrio="Centro", telefono=tel)
-        r2 = registrar_datos(correo="prueba@test.ec", telefono=tel)
-        assert r1["ok"] and r1["nuevo"] and r2["ok"] and not r2["nuevo"]
-        assert repositorio.buscar_ciudadano(tel) == {
-            "cedula": CEDULA, "nombres": "Prueba Test", "correo": "prueba@test.ec",
-            "barrio": "Centro", "cedula_verificada": None}
+        assert responder_terminos(True, tel)["ok"]
+        assert verificar_cedula(CEDULA, tel)["ok"]
+        assert responder_nombres(True, tel)["ok"]
+        assert guardar_contacto(tel, correo="prueba@test.ec", usar_whatsapp=True,
+                                barrio="Centro")["siguiente_paso"] == paso.REVISAR_PERFIL
+        assert responder_perfil(True, tel)["siguiente_paso"] == paso.COMPLETO
+        fila = repositorio.buscar_ciudadano(tel)
+        assert fila["cedula"] == CEDULA and fila["telefono_contacto"] == tel
+        assert fila["terminos_aceptados"] is True and fila["registro_confirmado_en"]
+        assert responder_perfil(False, tel)["registro_cancelado"]
+        assert repositorio.buscar_ciudadano(tel) is None
     finally:
-        with repositorio._get_pool().connection() as conn:
-            conn.execute(f"delete from {repositorio._esquema_activo()}.ciudadanos "
-                         "where telefono = %s", (tel,))
+        repositorio.borrar_ciudadano(tel)

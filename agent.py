@@ -9,7 +9,7 @@ siguiendo el guion aprobado por el cliente y capta simpatizantes con el flujo
 Este archivo solo ORQUESTA. Cada pieza vive en su carpeta:
   - Prompt (formato TAGS)      -> prompt/prompt.yaml
   - Configuración del LLM      -> model_config/model_config.yaml
-  - Tools                      -> tools/ (guardar_simpatizante)
+  - Tools                      -> tools/ (registro inicial + "Quiero sumarme")
   - Memoria de conversación    -> conversation_history/ (PostgresSaver, por thread_id)
   - Guardrail de entrada       -> input_guardrails/ (6 capas locales, before_agent)
   - Model Armor (Google Cloud) -> guardrails_model_armor/ (APAGADO: falta la cuenta GCP)
@@ -45,7 +45,15 @@ from input_guardrails import construir_middleware_guardrail
 # seguir guardrails_model_armor/README.md y descomentar esta línea y la de abajo.
 # from guardrails_model_armor import construir_middleware_model_armor
 from middleware import EstadoRegistroMiddleware
-from tools import guardar_simpatizante, registrar_ciudadano
+from tools import (
+    aceptar_terminos,
+    confirmar_colaboracion,
+    confirmar_nombres,
+    confirmar_perfil,
+    consultar_cedula,
+    guardar_datos_contacto,
+    preparar_colaboracion,
+)
 
 load_dotenv(find_dotenv())
 
@@ -63,8 +71,15 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Las tools cableadas. Constante de módulo para que /health las reporte.
 TOOLS_CABLEADAS = [
-    registrar_ciudadano,    # ACCIÓN  registro de la bienvenida (solo los datos que faltan)
-    guardar_simpatizante,   # ACCIÓN  cierre del flujo "Quiero sumarme"
+    # Registro inicial (flujo v2: F02 a F06)
+    aceptar_terminos,        # ACCIÓN  términos y privacidad, obligatorio antes de pedir datos
+    consultar_cedula,        # ACCIÓN  cédula -> DINARDAP -> nombres completos
+    confirmar_nombres,       # ACCIÓN  "¿Son correctos?"
+    guardar_datos_contacto,  # ACCIÓN  correo, teléfono de contacto, barrio
+    confirmar_perfil,        # ACCIÓN  resumen -> confirmar o cancelar el registro
+    # "Quiero sumarme" (F09 a F13)
+    preparar_colaboracion,   # ACCIÓN  idea en borrador + resumen
+    confirmar_colaboracion,  # ACCIÓN  registrar (idempotente) o cancelar
 ]
 
 _langfuse_handler = None
@@ -155,8 +170,8 @@ def construir_agente():
         # 1) Guardrail LOCAL (6 capas, sin red): secretos, inyección, toxicidad, enlaces.
         # 2) Model Armor (Google Cloud): reemplaza a las capas de IA de Groq. APAGADO
         #    hasta tener la cuenta de GCP (ver guardrails_model_armor/README.md).
-        # 3) EstadoRegistro le dice al modelo qué datos ya tiene la persona en la base,
-        #    para que pida solo los que faltan (pedido del cliente, guion v1).
+        # 3) EstadoRegistro le dice al modelo en qué paso del registro está la persona,
+        #    qué datos ya tiene y si hay una colaboración en borrador (flujo v2).
         middleware=[
             construir_middleware_guardrail(),
             # construir_middleware_model_armor(),

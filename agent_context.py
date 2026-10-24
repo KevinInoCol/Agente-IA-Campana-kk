@@ -7,7 +7,7 @@ y las tools lo leen con `runtime: ToolRuntime[ConversacionContext]` (parámetro
 inyectado y OCULTO del modelo: no aparece en el schema de la tool).
 
 Sirve para pasar lo que conoce el CANAL pero no el LLM. El caso que importa es el
-teléfono: la tool `guardar_simpatizante` lo guarda junto al lead, pero no puede ser
+teléfono: las tools lo usan como clave del registro y de la colaboración, pero no puede ser
 un argumento de la tool, porque entonces lo escribiría el modelo (y podría
 inventarlo, o tomar un número que la persona mencionó en el chat). Lo pone el canal
 desde el número del webhook de SmartGob Conecta.
