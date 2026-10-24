@@ -2,6 +2,9 @@
 # agent.py construye el modelo con init_chat_model("<provider>:<model>", ...).
 
 provider: openai        # Proveedor del modelo
-model: gpt-4.1          # Modelo LLM (default de la agencia)
-temperature: 0.2        # 0.2 = fiel al guion del bot (textos casi literales) con algo de calidez en las partes libres
+model: gpt-5.1          # Desde 2026-10-24. Comparado con gpt-4.1, gpt-5.5 y gpt-5.4-mini en la
+                        # misma conversación: gpt-4.1 resolvía un "6" del menú de Valores con la
+                        # numeración del menú principal (lo prohíbe el flujo v2); gpt-5.1 no.
+reasoning_effort: none  # Sin razonamiento: respuestas en ~2 s, como un modelo de chat. Los GPT-5
+                        # no aceptan `temperature` (por eso ya no está aquí).
 max_tokens: 600         # Los mensajes del guion son de 3-4 líneas; 600 deja margen sin permitir respuestas largas

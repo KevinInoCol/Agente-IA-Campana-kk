@@ -153,10 +153,14 @@ def construir_agente():
     """Construye el agente: LLM + tools + prompt + guardrail + memoria persistente."""
     cfg = cargar_model_config()
 
+    # `temperature` y `reasoning_effort` son opcionales: los modelos GPT-5 rechazan la
+    # temperatura y los de chat (gpt-4.1) no tienen razonamiento. Solo se pasa lo que
+    # está en el YAML.
+    opcionales = {k: cfg[k] for k in ("temperature", "reasoning_effort") if k in cfg}
     model = init_chat_model(
         f"{cfg['provider']}:{cfg['model']}",
-        temperature=cfg.get("temperature", 0),
         max_tokens=cfg.get("max_tokens"),
+        **opcionales,
     )
 
     agente = create_agent(
