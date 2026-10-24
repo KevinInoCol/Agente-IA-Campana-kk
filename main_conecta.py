@@ -57,8 +57,8 @@ from transcripcion import transcribir_audio
 # verificar qué corre en producción tras un deploy. Se ven en GET / y GET /health. El
 # build se puede sobreescribir con la env APP_VERSION; si no, subir el default en cada
 # commit que se despliegue.
-VERSION = "2.5.0"
-APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.7-gpt-6-sol")
+VERSION = "2.6.0"
+APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.8-gpt-6.1-sol")
 
 # Cuánto se recuerda un evento ya procesado (Conecta reintenta con espera exponencial).
 DEDUP_TTL_SECONDS = 24 * 3600
@@ -180,7 +180,9 @@ def _invocar_agente(texto: str, telefono: str, nombre_perfil: str | None) -> str
             context=ConversacionContext(telefono=telefono, nombre_perfil=nombre_perfil,
                                         canal="whatsapp"),
         )
-    return (resultado["messages"][-1].content or "").strip()
+    # `.text` y no `.content`: con la Responses API el contenido es una lista de
+    # bloques (texto + razonamiento); `.text` junta solo el texto en ambos casos.
+    return (resultado["messages"][-1].text or "").strip()
 
 
 async def _procesar(telefono: str, texto: str) -> None:

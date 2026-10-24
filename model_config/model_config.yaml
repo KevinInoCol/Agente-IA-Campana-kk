@@ -2,10 +2,11 @@
 # agent.py construye el modelo con init_chat_model("<provider>:<model>", ...).
 
 provider: openai        # Proveedor del modelo
-model: gpt-6-sol        # Desde 2026-10-24 (pedido del usuario). En la misma conversación de prueba
-                        # respetó el menú vigente como gpt-5.6-sol y fue algo más rápido (~1,7 s por
-                        # respuesta). gpt-4.1 resolvía un "6" del menú de Valores con la numeración
-                        # del menú principal (lo prohíbe el flujo v2).
-reasoning_effort: none  # Sin razonamiento: respuestas en ~2 s, como un modelo de chat. Los GPT-5
-                        # no aceptan `temperature` (por eso ya no está aquí).
+model: gpt-6.1-sol      # Desde 2026-10-24 (pedido del usuario). En la conversación de prueba respetó
+                        # el menú vigente y el registro. ~2,5 s por respuesta (hasta ~4 s en los turnos
+                        # que llaman tools). gpt-4.1 resolvía un "6" del menú de Valores con la
+                        # numeración del menú principal (lo prohíbe el flujo v2).
+reasoning_effort: low   # El mínimo que acepta gpt-6.1-sol (no admite `none`). No acepta `temperature`.
+use_responses_api: true # Obligatorio: en Chat Completions, gpt-6.1-sol solo admite tools con
+                        # reasoning_effort none, que no soporta. El texto se lee con `.text`.
 max_tokens: 600         # Los mensajes del guion son de 3-4 líneas; 600 deja margen sin permitir respuestas largas

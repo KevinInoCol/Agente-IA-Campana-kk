@@ -63,7 +63,7 @@ agent.py                 orquestador: LLM + tools + prompt + guardrail + memoria
 agent_context.py         ConversacionContext (teléfono y pushName, ocultos al LLM)
 main.py                  CLI
 main_conecta.py          FastAPI: webhook de Conecta (firma HMAC) -> debounce -> agente -> POST /messages
-model_config/            parámetros del LLM (gpt-6-sol, reasoning_effort none; desde 2026-10-24)
+model_config/            parámetros del LLM (gpt-6.1-sol, reasoning low, Responses API; desde 2026-10-24)
 prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
 tools/                   registro_tool (5 tools, F02-F06) + colaboracion_tool (2 tools, F09-F12); buscar_conocimiento (SIN cablear)
 middleware/              EstadoRegistro: agrega <terminos> y <estado_del_registro> al system prompt en cada llamada

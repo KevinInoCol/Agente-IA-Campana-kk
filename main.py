@@ -52,7 +52,7 @@ def main():
                         config,
                         context=contexto,
                     )
-                print("\nAgente:", resultado["messages"][-1].content)
+                print("\nAgente:", resultado["messages"][-1].text)
             except Exception as e:  # noqa: BLE001 — un fallo transitorio no tumba la sesión
                 print(f"\n⚠️  No pude procesar ese mensaje: {e}")
                 if os.getenv("DEBUG"):
