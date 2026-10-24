@@ -25,7 +25,7 @@ En `../` (carpeta del cliente):
 | Documento | Uso |
 |---|---|
 | `Flujo_Agente_Juan_Jose.docx` (2026-10-24) | **Fuente de verdad (flujo v2, pasos F01 a F13).** Textos casi literales en `<guion>` del prompt. Su página 10 lista puntos "por validar"; ver abajo cómo quedaron. |
-| `FlujoTTRBOT v1.docx` (2026-10-22) | Guion v1, reemplazado por el v2. Es el que está en producción en `main` hasta que se mezcle la rama `flujo-v2`. |
+| `FlujoTTRBOT v1.docx` (2026-10-22) | Guion v1, reemplazado por el v2. |
 | `Datos/BOT_x5f_WHATSAPP_…_FINAL.docx/.pdf` | Guion anterior, reemplazado por el v1. |
 | `TOTO REYES2.pdf` (manual de marca) | Solo el cargo (Concejal) y las frases de campaña. |
 | `AYUDA MEMORIA INTEGRAL_….docx/.pdf` | **No se usa.** Es una plantilla con las secciones vacías, y los valores que trae son de otro perfil ("formación médica", "Medicina"). |
@@ -147,12 +147,12 @@ traerlo aquí, y al revés.
 
 ## Registro y colaboraciones (flujo v2)
 
-- **Rama `flujo-v2`, NO mezclada en `main`.** El documento dice que sin el enlace y
-  la finalidad de privacidad "la captura queda sin habilitar". Sin ellos el bot
-  responde a todo "no puedo completar registros", así que no se despliega hasta que
-  Giovani los pase. Para activarlo: `PRIVACIDAD_ENLACE`, `PRIVACIDAD_FINALIDAD`,
-  `PERSONA_FUENTE=ventanilla` + credenciales de la ventanilla, mezclar la rama e
-  Implementar. `GET /health` → `terminos_configurados` y `registro_civil`.
+- **En `main` desde el 2026-10-24.** El documento dice que sin el enlace y la
+  finalidad de privacidad "la captura queda sin habilitar": sin ellos el bot responde
+  a todo "no puedo completar registros". Antes de Implementar hacen falta
+  `PRIVACIDAD_ENLACE`, `PRIVACIDAD_FINALIDAD` y `PERSONA_FUENTE=ventanilla` +
+  credenciales de la ventanilla (sin la DINARDAP tampoco se registra nadie).
+  `GET /health` → `terminos_configurados` y `registro_civil`.
 - **El orden lo manda el backend**, no el prompt: `dominio/registro.py` calcula el
   `paso_pendiente` (TERMINOS → CEDULA → CONFIRMAR_NOMBRES → CORREO → TELEFONO → BARRIO
   → REVISAR_PERFIL → COMPLETO). Las tools lo devuelven como `siguiente_paso` y el
