@@ -48,7 +48,6 @@ from debounce import (
     encolar_mensaje,
     get_redis,
 )
-from dominio import terminos
 from integraciones import persona
 from simpatizantes import apps_script, repositorio
 from smartgob_conecta import config as conecta_config
@@ -58,8 +57,8 @@ from transcripcion import transcribir_audio
 # verificar qué corre en producción tras un deploy. Se ven en GET / y GET /health. El
 # build se puede sobreescribir con la env APP_VERSION; si no, subir el default en cada
 # commit que se despliegue.
-VERSION = "2.0.0"
-APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.2-flujo-v2")
+VERSION = "2.1.0"
+APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.3-sin-aviso-privacidad")
 
 # Cuánto se recuerda un evento ya procesado (Conecta reintenta con espera exponencial).
 DEDUP_TTL_SECONDS = 24 * 3600
@@ -161,7 +160,6 @@ def health() -> dict:
                      "namespace": REDIS_KEY_PREFIX},
         "simpatizantes": {"postgres": repositorio.esta_configurado(),
                           "apps_script": apps_script.esta_configurado()},
-        "terminos_configurados": terminos.esta_configurado(),
         "registro_civil": {"fuente": persona.PERSONA_FUENTE,
                            "credenciales": bool(persona.adaptador.VENTANILLA_USER
                                                 and persona.adaptador.VENTANILLA_PASSWORD)},

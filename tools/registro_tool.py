@@ -1,22 +1,23 @@
 """
-Tools del registro inicial (flujo v2 del cliente, F02 a F07).
+Tools del registro inicial (flujo v2 del cliente, F03 a F07).
 =============================================================
 
 Fuente: `Flujo_Agente_Juan_Jose.docx` (2026-10-24). Reemplaza al registro del guion
 v1, donde la persona escribía su nombre y el correo era opcional. Ahora:
 
-    F02 aceptar_terminos        términos y privacidad, OBLIGATORIO antes de pedir datos
     F03 consultar_cedula        cédula -> DINARDAP -> nombres completos
     F04 confirmar_nombres       "¿Son correctos?"  (no hay vía de nombre manual)
     F05 guardar_datos_contacto  correo, teléfono de contacto y barrio (todos obligatorios)
     F06 confirmar_perfil        resumen -> Confirmar datos / Cancelar registro
     F07                         menú principal, solo con el registro confirmado
 
+El paso F02 del documento (aceptación de términos y privacidad) NO se implementa: el
+cliente lo descartó el 2026-10-24 porque no hay aviso de privacidad.
+
 Cada tool devuelve `siguiente_paso` (de `dominio/registro.py`): el modelo no tiene
 que deducir el orden del flujo, se lo dice el backend.
 
 REGLAS QUE SE HACEN CUMPLIR AQUÍ (no en el prompt)
-- Sin términos aceptados no se guarda ningún dato (LOPDP).
 - Los nombres SOLO salen de la DINARDAP. Si la consulta falla, no se registra: se
   ofrece reintentar o salir (criterio del documento; el nombre manual "no está
   aprobado"). La consulta la hace el backend, nunca el modelo.
@@ -34,7 +35,6 @@ from langchain.tools import ToolRuntime, tool
 
 from agent_context import ConversacionContext
 from dominio import registro as paso
-from dominio import terminos
 from dominio.correo import normalizar_email
 from dominio.identidad import validar_cedula
 from dominio.telefono import enmascarar_correo, enmascarar_telefono, normalizar_telefono
@@ -48,8 +48,6 @@ MAX_TEXTO = 160
 # Errores que ve el modelo (el prompt dice qué responder a cada uno).
 SIN_TELEFONO = "SIN_TELEFONO"
 NO_SE_PUDO_GUARDAR = "NO_SE_PUDO_GUARDAR"
-TERMINOS_NO_CONFIGURADOS = "TERMINOS_NO_CONFIGURADOS"
-TERMINOS_PENDIENTES = "TERMINOS_PENDIENTES"
 CEDULA_INVALIDA = "CEDULA_INVALIDA"
 CEDULA_NO_EXISTE = "CEDULA_NO_EXISTE"
 SERVICIO_NO_DISPONIBLE = "SERVICIO_NO_DISPONIBLE"
@@ -109,26 +107,8 @@ def _guardar(telefono: str, registro: dict, **campos) -> dict:
 # ---------------------------------------------------------------------------
 # Lógica (testeable sin el LLM)
 # ---------------------------------------------------------------------------
-def responder_terminos(acepta: bool, telefono: str | None,
-                       nombre_perfil: str | None = None, canal: str = "whatsapp") -> dict:
-    """F02. Guarda la respuesta a los términos (también el "No acepto")."""
-    if not terminos.esta_configurado():
-        return {"ok": False, "error": TERMINOS_NO_CONFIGURADOS, "siguiente_paso": None}
-    registro, error = _leer(telefono)
-    if error:
-        return error
-    campos = {"terminos_aceptados": bool(acepta),
-              "terminos_version": terminos.PRIVACIDAD_VERSION,
-              "terminos_respondido_en": datetime.now(timezone.utc), "canal": canal}
-    if nombre_perfil:
-        campos["nombre_perfil"] = nombre_perfil
-    nuevo = _guardar(telefono, registro, **campos)
-    if "_error" in nuevo:
-        return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
-    return _resultado(nuevo, acepto=bool(acepta))
-
-
-def verificar_cedula(cedula: str | None, telefono: str | None) -> dict:
+def verificar_cedula(cedula: str | None, telefono: str | None,
+                     nombre_perfil: str | None = None, canal: str = "whatsapp") -> dict:
     """F03. Valida la cédula, consulta la DINARDAP y guarda los nombres SIN confirmar.
 
     Con `cedula` vacía usa la que ya estaba guardada (registros del guion v1, que
@@ -137,8 +117,6 @@ def verificar_cedula(cedula: str | None, telefono: str | None) -> dict:
     registro, error = _leer(telefono)
     if error:
         return error
-    if registro.get("terminos_aceptados") is not True:
-        return _resultado(registro, ok=False, error=TERMINOS_PENDIENTES)
 
     cruda = _limpio(cedula) or registro.get("cedula")
     if not cruda:
@@ -166,9 +144,12 @@ def verificar_cedula(cedula: str | None, telefono: str | None) -> dict:
                        codigo, respuesta["meta"]["correlation_id"])
         return _resultado(registro, ok=False, error=SERVICIO_NO_DISPONIBLE)
 
-    nuevo = _guardar(telefono, registro, cedula=validacion.normalizada,
-                     nombres=respuesta["data"]["full_name"], cedula_verificada=True,
-                     nombres_confirmados=False, registro_confirmado_en=None)
+    campos = {"cedula": validacion.normalizada, "nombres": respuesta["data"]["full_name"],
+              "cedula_verificada": True, "nombres_confirmados": False,
+              "registro_confirmado_en": None, "canal": canal}
+    if nombre_perfil:
+        campos["nombre_perfil"] = nombre_perfil
+    nuevo = _guardar(telefono, registro, **campos)
     if "_error" in nuevo:
         return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
     return _resultado(nuevo, nombre_completo=paso.nombre_para_mostrar(nuevo.get("nombres")))
@@ -199,8 +180,6 @@ def guardar_contacto(telefono: str | None, correo: str | None = None,
     registro, error = _leer(telefono)
     if error:
         return error
-    if registro.get("terminos_aceptados") is not True:
-        return _resultado(registro, ok=False, error=TERMINOS_PENDIENTES)
 
     campos, errores = {}, []
     if _limpio(correo):
@@ -241,7 +220,7 @@ def responder_perfil(confirma: bool, telefono: str | None) -> dict:
         except Exception:  # noqa: BLE001
             logger.exception("registro: no se pudo cancelar el registro")
             return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
-        return {"ok": True, "error": None, "siguiente_paso": paso.TERMINOS,
+        return {"ok": True, "error": None, "siguiente_paso": paso.CEDULA,
                 "registro_cancelado": True}
     if not paso.perfil_completo(registro):
         return _resultado(registro, ok=False, error=PERFIL_INCOMPLETO)
@@ -268,22 +247,6 @@ def _ctx(runtime: ToolRuntime[ConversacionContext]) -> ConversacionContext:
 # Tools
 # ---------------------------------------------------------------------------
 @tool
-def aceptar_terminos(acepta: bool, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Guarda la respuesta de la persona a los términos y el aviso de privacidad (F02).
-
-    Úsala solo cuando la respuesta sea inequívoca: "Acepto" (acepta=true) o "No
-    acepto" (acepta=false). Si es ambigua, vuelve a preguntar sin llamarla.
-
-    Returns:
-        ok=true -> sigue con `siguiente_paso`. error TERMINOS_NO_CONFIGURADOS -> el
-        registro no está disponible todavía.
-    """
-    ctx = _ctx(runtime)
-    return _log("aceptar_terminos", responder_terminos(
-        acepta, ctx.telefono, nombre_perfil=ctx.nombre_perfil, canal=ctx.canal))
-
-
-@tool
 def consultar_cedula(cedula: str, runtime: ToolRuntime[ConversacionContext]) -> dict:
     """Consulta la cédula en el registro civil y devuelve los nombres asociados (F03).
 
@@ -294,10 +257,11 @@ def consultar_cedula(cedula: str, runtime: ToolRuntime[ConversacionContext]) -> 
 
     Returns:
         ok=true -> muestra `nombre_completo` y pregunta si es correcto (F04).
-        error: CEDULA_INVALIDA, CEDULA_NO_EXISTE, SERVICIO_NO_DISPONIBLE,
-        TERMINOS_PENDIENTES.
+        error: CEDULA_INVALIDA, CEDULA_NO_EXISTE, SERVICIO_NO_DISPONIBLE.
     """
-    return _log("consultar_cedula", verificar_cedula(cedula, _ctx(runtime).telefono))
+    ctx = _ctx(runtime)
+    return _log("consultar_cedula", verificar_cedula(
+        cedula, ctx.telefono, nombre_perfil=ctx.nombre_perfil, canal=ctx.canal))
 
 
 @tool

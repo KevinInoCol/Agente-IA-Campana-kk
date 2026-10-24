@@ -46,7 +46,6 @@ from input_guardrails import construir_middleware_guardrail
 # from guardrails_model_armor import construir_middleware_model_armor
 from middleware import EstadoRegistroMiddleware
 from tools import (
-    aceptar_terminos,
     confirmar_colaboracion,
     confirmar_nombres,
     confirmar_perfil,
@@ -71,8 +70,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Las tools cableadas. Constante de módulo para que /health las reporte.
 TOOLS_CABLEADAS = [
-    # Registro inicial (flujo v2: F02 a F06)
-    aceptar_terminos,        # ACCIÓN  términos y privacidad, obligatorio antes de pedir datos
+    # Registro inicial (flujo v2: F03 a F06; sin F02, el cliente descartó el aviso de privacidad)
     consultar_cedula,        # ACCIÓN  cédula -> DINARDAP -> nombres completos
     confirmar_nombres,       # ACCIÓN  "¿Son correctos?"
     guardar_datos_contacto,  # ACCIÓN  correo, teléfono de contacto, barrio

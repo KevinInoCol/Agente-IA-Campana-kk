@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from dominio import terminos
 from integraciones.persona import adaptador
 from simpatizantes import repositorio
 
@@ -86,9 +85,3 @@ def fuente(monkeypatch):
         monkeypatch.setattr(adaptador, "_instancia", None)
     usar("stub")
     return usar
-
-
-@pytest.fixture
-def con_terminos(monkeypatch):
-    monkeypatch.setattr(terminos, "PRIVACIDAD_ENLACE", "https://ejemplo.ec/privacidad")
-    monkeypatch.setattr(terminos, "PRIVACIDAD_FINALIDAD", "Finalidad de prueba.")

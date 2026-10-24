@@ -1,4 +1,4 @@
-"""Registro inicial del flujo v2 (F02 a F07): dominio, tools sin LLM y estado del modelo.
+"""Registro inicial del flujo v2 (F03 a F07): dominio, tools sin LLM y estado del modelo.
 
 Los tests de integración escriben en la base de `DATABASE_URL` y se saltan si no
 responde. ⚠️ Con el `.env` actual eso es el Supabase real: correrlos con
@@ -13,10 +13,8 @@ from dominio.identidad import validar_cedula
 from dominio.telefono import enmascarar_correo, enmascarar_telefono, normalizar_telefono
 from input_guardrails.input_guardrail import _guardrail
 from middleware import describir_estado
-from middleware.estado_registro import describir_terminos
 from simpatizantes import repositorio
 from tools import (
-    aceptar_terminos,
     confirmar_nombres,
     confirmar_perfil,
     consultar_cedula,
@@ -26,7 +24,6 @@ from tools.registro_tool import (
     guardar_contacto,
     responder_nombres,
     responder_perfil,
-    responder_terminos,
     verificar_cedula,
 )
 
@@ -74,10 +71,7 @@ def test_mascaras():
 
 def test_orden_de_pasos():
     r = {}
-    assert paso.siguiente_paso(r) == paso.TERMINOS
-    r["terminos_aceptados"] = False
-    assert paso.siguiente_paso(r) == paso.TERMINOS
-    r["terminos_aceptados"] = True
+    assert paso.siguiente_paso(None) == paso.CEDULA
     assert paso.siguiente_paso(r) == paso.CEDULA
     r.update(cedula=CEDULA, nombres="MORA PEREZ ANA LUCIA")
     assert paso.siguiente_paso(r) == paso.CONFIRMAR_NOMBRES
@@ -100,44 +94,14 @@ def test_nombres_de_la_dinardap():
     assert paso.nombre_para_mostrar("MORA PEREZ ANA LUCIA") == "Mora Perez Ana Lucia"
 
 
-# --- F02 términos ---------------------------------------------------------------
-
-def test_sin_terminos_configurados_no_registra(repo, monkeypatch):
-    from dominio import terminos
-    monkeypatch.setattr(terminos, "PRIVACIDAD_ENLACE", "")
-    r = responder_terminos(True, TEL)
-    assert not r["ok"] and r["error"] == "TERMINOS_NO_CONFIGURADOS"
-    assert TEL not in repo.ciudadanos
-
-
-def test_acepta_terminos(repo, con_terminos):
-    r = responder_terminos(True, TEL, nombre_perfil="Ana")
-    assert r["ok"] and r["siguiente_paso"] == paso.CEDULA
-    assert repo.ciudadanos[TEL]["terminos_aceptados"] is True
-    assert repo.ciudadanos[TEL]["terminos_version"] == "v1"
-
-
-def test_no_acepta_terminos(repo, con_terminos):
-    r = responder_terminos(False, TEL)
-    assert r["ok"] and r["siguiente_paso"] == paso.TERMINOS
-    assert repo.ciudadanos[TEL]["terminos_aceptados"] is False
-
-
-def test_sin_terminos_no_se_guarda_ningun_dato(repo, con_terminos, fuente):
-    assert verificar_cedula(CEDULA, TEL)["error"] == "TERMINOS_PENDIENTES"
-    assert guardar_contacto(TEL, correo="a@b.ec")["error"] == "TERMINOS_PENDIENTES"
-    assert TEL not in repo.ciudadanos
-
-
-def test_sin_telefono(repo, con_terminos):
-    assert responder_terminos(True, None)["error"] == "SIN_TELEFONO"
+def test_sin_telefono(repo, fuente):
+    assert verificar_cedula(CEDULA, None)["error"] == "SIN_TELEFONO"
 
 
 # --- F03/F04 cédula y nombres ---------------------------------------------------
 
 @pytest.fixture
-def acepto(repo, con_terminos):
-    responder_terminos(True, TEL)
+def acepto(repo):
     return repo
 
 
@@ -159,13 +123,13 @@ def test_cedula_invalida_no_consulta(acepto, fuente, monkeypatch):
 def test_cedula_no_existe_no_se_guarda(acepto, fuente):
     r = verificar_cedula(NO_EXISTE, TEL)
     assert not r["ok"] and r["error"] == "CEDULA_NO_EXISTE"
-    assert not acepto.ciudadanos[TEL].get("cedula")
+    assert TEL not in acepto.ciudadanos
 
 
 def test_dinardap_apagada_no_registra(acepto, fuente):
     fuente("ninguna")
     r = verificar_cedula(CEDULA, TEL)
-    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and not acepto.ciudadanos[TEL].get("cedula")
+    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and TEL not in acepto.ciudadanos
 
 
 def test_dinardap_caida_no_registra(acepto, fuente, monkeypatch):
@@ -176,11 +140,11 @@ def test_dinardap_caida_no_registra(acepto, fuente, monkeypatch):
     monkeypatch.setattr(adaptador, "VENTANILLA_PASSWORD", "p")
     monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectTimeout("x")))
     r = verificar_cedula(CEDULA, TEL)
-    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and not acepto.ciudadanos[TEL].get("cedula")
+    assert r["error"] == "SERVICIO_NO_DISPONIBLE" and TEL not in acepto.ciudadanos
 
 
 def test_cedula_vacia_usa_la_guardada_del_guion_v1(acepto, fuente):
-    acepto.ciudadanos[TEL].update(cedula=CEDULA, nombres=None)     # registro viejo
+    acepto.ciudadanos[TEL] = {"cedula": CEDULA, "nombres": None}     # registro viejo
     r = verificar_cedula("", TEL)
     assert r["ok"] and r["nombre_completo"]
 
@@ -278,7 +242,6 @@ def test_la_cedula_no_vuelve_al_modelo_ni_a_los_logs(perfil_completo, caplog):
 
 
 def test_el_telefono_de_whatsapp_no_es_argumento_de_ninguna_tool():
-    assert set(aceptar_terminos.args) == {"acepta"}
     assert set(consultar_cedula.args) == {"cedula"}
     assert set(confirmar_nombres.args) == {"correctos"}
     assert set(guardar_datos_contacto.args) == {"correo", "telefono", "usar_whatsapp", "barrio"}
@@ -288,12 +251,11 @@ def test_el_telefono_de_whatsapp_no_es_argumento_de_ninguna_tool():
 # --- Estado que ve el modelo ----------------------------------------------------
 
 def test_estado_sin_registro():
-    texto = describir_estado(None)
-    assert "paso_pendiente: TERMINOS" in texto and "sin responder" in texto
+    assert "paso_pendiente: CEDULA" in describir_estado(None)
 
 
 def test_estado_no_muestra_la_cedula_ni_datos_completos():
-    texto = describir_estado({"terminos_aceptados": True, "cedula": CEDULA,
+    texto = describir_estado({"cedula": CEDULA,
                               "nombres": "MORA PEREZ ANA LUCIA", "nombres_confirmados": True,
                               "correo": "ana@gmail.com", "telefono_contacto": "593991234567",
                               "barrio": "Urdesa"})
@@ -303,24 +265,17 @@ def test_estado_no_muestra_la_cedula_ni_datos_completos():
 
 
 def test_estado_cedula_vieja_sin_consultar():
-    texto = describir_estado({"terminos_aceptados": True, "cedula": CEDULA})
+    texto = describir_estado({"cedula": CEDULA})
     assert "cedula vacía" in texto and CEDULA not in texto
 
 
 def test_estado_con_borrador():
-    texto = describir_estado({"terminos_aceptados": False}, {"id": 1, "ayuda": "Voluntaria"})
-    assert "NO aceptados" in texto and "Voluntaria" in texto
+    texto = describir_estado({"cedula": CEDULA}, {"id": 1, "ayuda": "Voluntaria"})
+    assert "Voluntaria" in texto and "borrador" in texto
 
 
 def test_estado_sin_consultar():
     assert "problema temporal" in describir_estado(None, consultado=False)
-
-
-def test_bloque_terminos(monkeypatch, con_terminos):
-    assert "https://ejemplo.ec/privacidad" in describir_terminos()
-    from dominio import terminos
-    monkeypatch.setattr(terminos, "PRIVACIDAD_FINALIDAD", "")
-    assert "NO CONFIGURADOS" in describir_terminos()
 
 
 # --- Guardrail: un correo no es un enlace ---------------------------------------
@@ -351,18 +306,17 @@ def _base_disponible() -> bool:
 
 
 @pytest.mark.skipif(not _base_disponible(), reason="Postgres no disponible")
-def test_integracion_registro_completo(con_terminos, fuente):
+def test_integracion_registro_completo(fuente):
     tel = "593900000777"
     try:
-        assert responder_terminos(True, tel)["ok"]
-        assert verificar_cedula(CEDULA, tel)["ok"]
+        assert verificar_cedula(CEDULA, tel, nombre_perfil="Prueba")["ok"]
         assert responder_nombres(True, tel)["ok"]
         assert guardar_contacto(tel, correo="prueba@test.ec", usar_whatsapp=True,
                                 barrio="Centro")["siguiente_paso"] == paso.REVISAR_PERFIL
         assert responder_perfil(True, tel)["siguiente_paso"] == paso.COMPLETO
         fila = repositorio.buscar_ciudadano(tel)
         assert fila["cedula"] == CEDULA and fila["telefono_contacto"] == tel
-        assert fila["terminos_aceptados"] is True and fila["registro_confirmado_en"]
+        assert fila["registro_confirmado_en"]
         assert responder_perfil(False, tel)["registro_cancelado"]
         assert repositorio.buscar_ciudadano(tel) is None
     finally:

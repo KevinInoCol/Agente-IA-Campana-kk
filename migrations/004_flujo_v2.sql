@@ -1,13 +1,11 @@
 -- Flujo funcional v2 del cliente (Flujo_Agente_Juan_Jose.docx, 2026-10-24).
 -- Solo AGREGA columnas e índices: el código del guion v1 sigue funcionando encima.
 
--- Registro inicial: términos, nombres recuperados de la DINARDAP, teléfono de
--- contacto (distinto del WhatsApp) y confirmación del perfil (F06).
+-- Registro inicial: nombres recuperados de la DINARDAP, teléfono de contacto
+-- (distinto del WhatsApp) y confirmación del perfil (F06). Sin aviso de privacidad:
+-- el cliente lo descartó (no hay enlace).
 alter table campana_toto_reyes.ciudadanos
     add column if not exists telefono_contacto       text,
-    add column if not exists terminos_aceptados      boolean,
-    add column if not exists terminos_version        text,
-    add column if not exists terminos_respondido_en  timestamptz,
     add column if not exists nombres_confirmados     boolean not null default false,
     add column if not exists registro_confirmado_en  timestamptz;
 

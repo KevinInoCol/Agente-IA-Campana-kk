@@ -15,7 +15,7 @@ TEL = "593900000002"
 @pytest.fixture
 def registrado(repo):
     repo.ciudadanos[TEL] = {
-        "terminos_aceptados": True, "cedula": "0915450001", "nombres": "MORA PEREZ ANA LUCIA",
+        "cedula": "0915450001", "nombres": "MORA PEREZ ANA LUCIA",
         "nombres_confirmados": True, "correo": "ana@gmail.com",
         "telefono_contacto": "593991234567", "barrio": "Urdesa",
         "registro_confirmado_en": datetime.now(timezone.utc),
@@ -24,7 +24,7 @@ def registrado(repo):
 
 
 def test_sin_perfil_completo_no_prepara(repo):
-    repo.ciudadanos[TEL] = {"terminos_aceptados": True}
+    repo.ciudadanos[TEL] = {"barrio": "Urdesa"}
     r = preparar("Quiero ser voluntaria", TEL)
     assert r["error"] == "PERFIL_INCOMPLETO" and r["siguiente_paso"] == "CEDULA"
 
@@ -138,7 +138,7 @@ def test_integracion_borrador_y_confirmacion():
     esquema = repositorio._esquema_activo()
     try:
         repositorio.actualizar_ciudadano(
-            tel, terminos_aceptados=True, cedula="0915450001", nombres="PRUEBA TEST ANA",
+            tel, cedula="0915450001", nombres="PRUEBA TEST ANA",
             nombres_confirmados=True, correo="p@test.ec", telefono_contacto=tel,
             barrio="Centro", registro_confirmado_en=datetime.now(timezone.utc))
         assert preparar("Uno", tel)["ok"] and preparar("Dos", tel)["ok"]

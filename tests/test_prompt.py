@@ -39,8 +39,7 @@ def test_tools_del_prompt_existen():
 
 def test_guion_completo():
     # Los textos del flujo v2 del cliente (Flujo_Agente_Juan_Jose.docx) están en <guion>.
-    for seccion in ("BIENVENIDA", "TERMINOS", "TERMINOS_RECHAZADOS", "REGISTRO_NO_DISPONIBLE",
-                    "PEDIR_CEDULA", "CEDULA_INVALIDA", "CEDULA_NO_EXISTE",
+    for seccion in ("BIENVENIDA", "PEDIR_CEDULA", "CEDULA_INVALIDA", "CEDULA_NO_EXISTE",
                     "CONSULTA_NO_DISPONIBLE", "CONFIRMAR_NOMBRES", "PEDIR_CORREO",
                     "PEDIR_TELEFONO", "PEDIR_BARRIO", "RESUMEN_PERFIL", "REGISTRO_CANCELADO",
                     "NO_SE_PUDO_GUARDAR", "SALIR", "MENU_PRINCIPAL", "QUIEN_ES", "FAMILIA",
@@ -66,15 +65,20 @@ def test_el_cierre_no_promete_contacto():
 def test_cada_paso_del_registro_tiene_su_texto():
     from dominio import registro as paso
     tabla = SP.split("\n<registro>\n")[1].split("\n</registro>\n")[0]
-    for nombre in (paso.TERMINOS, paso.CEDULA, paso.CONFIRMAR_NOMBRES, paso.CORREO,
+    for nombre in (paso.CEDULA, paso.CONFIRMAR_NOMBRES, paso.CORREO,
                    paso.TELEFONO, paso.BARRIO, paso.REVISAR_PERFIL, paso.COMPLETO):
         assert re.search(rf"^\| {nombre} ", tabla, re.M), nombre
 
 
 def test_errores_de_las_tools_estan_en_el_prompt():
     from tools import colaboracion_tool as c, registro_tool as r
-    for codigo in (r.TERMINOS_NO_CONFIGURADOS, r.CEDULA_INVALIDA, r.CEDULA_NO_EXISTE,
+    for codigo in (r.CEDULA_INVALIDA, r.CEDULA_NO_EXISTE,
                    r.SERVICIO_NO_DISPONIBLE, r.CORREO_INVALIDO, r.TELEFONO_INVALIDO,
-                   r.NO_SE_PUDO_GUARDAR, r.SIN_TELEFONO, r.TERMINOS_PENDIENTES,
+                   r.NO_SE_PUDO_GUARDAR, r.SIN_TELEFONO,
                    r.SIN_NOMBRES_PENDIENTES, r.PERFIL_INCOMPLETO, c.FALLO, c.RESULTADO_INCIERTO, c.SIN_BORRADOR):
         assert codigo in SP, codigo
+
+
+def test_sin_aviso_de_privacidad():
+    # El cliente descartó el paso F02 (no hay enlace de privacidad).
+    assert "aceptar_terminos" not in SP and "{enlace_privacidad}" not in SP

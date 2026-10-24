@@ -1,5 +1,5 @@
 """
-Paso pendiente del registro inicial (flujo v2, F02 a F07) — dominio PURO.
+Paso pendiente del registro inicial (flujo v2, F03 a F07) — dominio PURO.
 =========================================================================
 
 Con la fila de `ciudadanos` de un número de WhatsApp, dice qué toca ahora. Lo usan
@@ -7,12 +7,12 @@ las tools (para devolverle al modelo el `siguiente_paso`) y el middleware (para
 contarle el estado en cada turno). Una sola implementación: el orden del flujo vive
 aquí y en ningún otro lado.
 
-Orden del documento del cliente:
-    TERMINOS -> CEDULA -> CONFIRMAR_NOMBRES -> CORREO -> TELEFONO -> BARRIO
-             -> REVISAR_PERFIL -> COMPLETO
+Orden del documento del cliente, SIN el paso F02 (aceptación de términos): el
+cliente lo descartó el 2026-10-24 porque no hay aviso de privacidad.
+    CEDULA -> CONFIRMAR_NOMBRES -> CORREO -> TELEFONO -> BARRIO
+           -> REVISAR_PERFIL -> COMPLETO
 """
 
-TERMINOS = "TERMINOS"
 CEDULA = "CEDULA"
 CONFIRMAR_NOMBRES = "CONFIRMAR_NOMBRES"
 CORREO = "CORREO"
@@ -28,8 +28,6 @@ CONTACTO = ((CORREO, "correo"), (TELEFONO, "telefono_contacto"), (BARRIO, "barri
 def siguiente_paso(registro: dict | None) -> str:
     """El paso del alta que falta, o COMPLETO."""
     r = registro or {}
-    if r.get("terminos_aceptados") is not True:
-        return TERMINOS
     if not r.get("cedula") or not r.get("nombres"):
         return CEDULA
     if not r.get("nombres_confirmados"):

@@ -3,7 +3,7 @@ Repositorio de ciudadanos y simpatizantes en PostgreSQL.
 ========================================================
 
 Único lugar que sabe cómo se guardan en la base:
-  - `ciudadanos`: el registro inicial (términos, cédula, nombres de la DINARDAP,
+  - `ciudadanos`: el registro inicial (cédula, nombres de la DINARDAP,
     correo, teléfono de contacto, barrio), uno por número de WhatsApp. Lo escriben
     las tools de `tools/registro_tool.py`.
   - `simpatizantes`: las colaboraciones de "Quiero sumarme" (una por idea), con
@@ -57,14 +57,12 @@ _lock = threading.Lock()
 # dinámico de `actualizar_ciudadano`).
 COLUMNAS_CIUDADANO = (
     "cedula", "nombres", "correo", "barrio", "telefono_contacto", "nombre_perfil",
-    "canal", "cedula_verificada", "terminos_aceptados", "terminos_version",
-    "terminos_respondido_en", "nombres_confirmados", "registro_confirmado_en",
+    "canal", "cedula_verificada", "nombres_confirmados", "registro_confirmado_en",
 )
 # Columnas que se le devuelven al resto del código.
 COLUMNAS_LECTURA = (
     "cedula", "nombres", "correo", "barrio", "telefono_contacto", "cedula_verificada",
-    "terminos_aceptados", "terminos_version", "nombres_confirmados",
-    "registro_confirmado_en",
+    "nombres_confirmados", "registro_confirmado_en",
 )
 
 

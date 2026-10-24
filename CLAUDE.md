@@ -6,8 +6,7 @@ con LangChain v1 (`create_agent`) + LangGraph sobre FastAPI. El canal es la API 
 indicación del cliente (2026-10-21).
 
 Hace tres cosas (flujo v2, `Flujo_Agente_Juan_Jose.docx`, 2026-10-24):
-1. **Registro inicial obligatorio antes del menú**: acepta términos y privacidad →
-   cédula consultada en la **DINARDAP**, que devuelve los nombres → la persona los
+1. **Registro inicial obligatorio antes del menú**: cédula consultada en la **DINARDAP**, que devuelve los nombres → la persona los
    confirma → correo, teléfono de contacto y barrio → resumen y confirmación. Tabla
    `ciudadanos`. El middleware `EstadoRegistro` le dice al modelo, en cada turno, en
    qué paso está la persona (`paso_pendiente`).
@@ -68,7 +67,7 @@ model_config/            parámetros del LLM (gpt-4.1, temperatura 0.2)
 prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
 tools/                   registro_tool (5 tools, F02-F06) + colaboracion_tool (2 tools, F09-F12); buscar_conocimiento (SIN cablear)
 middleware/              EstadoRegistro: agrega <terminos> y <estado_del_registro> al system prompt en cada llamada
-dominio/                 cédula y correo (de MAD), teléfono, orden del registro, términos
+dominio/                 cédula y correo (de MAD), teléfono, orden del registro
 integraciones/persona/   consulta al registro civil (DINARDAP vía ventanilla)        (de MAD)
 rag/rag.py               ingesta de la Ayuda Memoria a Qdrant (rag/data/, no versionado) (de MAD)
 simpatizantes/           repositorio de ciudadanos y simpatizantes: Postgres + Apps Script (opcional)
@@ -147,18 +146,17 @@ traerlo aquí, y al revés.
 
 ## Registro y colaboraciones (flujo v2)
 
-- **En `main` desde el 2026-10-24.** El documento dice que sin el enlace y la
-  finalidad de privacidad "la captura queda sin habilitar": sin ellos el bot responde
-  a todo "no puedo completar registros". Antes de Implementar hacen falta
-  `PRIVACIDAD_ENLACE`, `PRIVACIDAD_FINALIDAD` y `PERSONA_FUENTE=ventanilla` +
-  credenciales de la ventanilla (sin la DINARDAP tampoco se registra nadie).
-  `GET /health` → `terminos_configurados` y `registro_civil`.
+- **En `main` desde el 2026-10-24.** Antes de Implementar hacen falta
+  `PERSONA_FUENTE=ventanilla` y las credenciales de la ventanilla: sin la DINARDAP
+  nadie se registra (los nombres salen de ahí). `GET /health` → `registro_civil`.
+- **Sin aviso de privacidad (F02 descartado).** El documento lo pedía obligatorio,
+  pero Giovani dijo que no hay enlace de privacidad y se quitó (2026-10-24). ⚠️ El bot
+  pide cédula, correo y teléfono sin aviso ni consentimiento (LOPDP): decisión del
+  cliente.
 - **El orden lo manda el backend**, no el prompt: `dominio/registro.py` calcula el
-  `paso_pendiente` (TERMINOS → CEDULA → CONFIRMAR_NOMBRES → CORREO → TELEFONO → BARRIO
+  `paso_pendiente` (CEDULA → CONFIRMAR_NOMBRES → CORREO → TELEFONO → BARRIO
   → REVISAR_PERFIL → COMPLETO). Las tools lo devuelven como `siguiente_paso` y el
   middleware lo pone en `<estado_del_registro>`.
-- **Sin términos aceptados no se guarda ningún dato.** El "No acepto" sí se guarda
-  (`terminos_aceptados = false`), con `terminos_version` y fecha.
 - **Los nombres solo salen de la DINARDAP** (`integraciones/persona/`, el adapter de
   MAD). Si la consulta falla, no se registra: Reintentar o Salir. No hay vía de nombre
   manual (el documento dice que no está aprobada). Los registros del guion v1 tienen
@@ -176,8 +174,8 @@ traerlo aquí, y al revés.
 - El guardrail de entrada bloqueaba todo mensaje con correo (leía `gmail.com` como un
   enlace). Corregido el 2026-10-22: los correos se quitan antes del filtro de URLs.
 
-**Pendiente del cliente (página 10 del documento):** enlace y finalidad de
-privacidad (bloquea); confirmar que todos los campos son obligatorios; a qué teléfono
+**Pendiente del cliente (página 10 del documento):** confirmar que todos los campos
+son obligatorios; a qué teléfono
 se contacta; cómo consulta el equipo (acceso a Postgres o vista en SmartConecta); vía
 real para atención humana, corrección y borrado de datos. Mientras tanto el bot dice
 con claridad que eso no se puede hacer desde el chat.
