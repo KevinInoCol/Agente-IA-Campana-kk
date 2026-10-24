@@ -41,7 +41,7 @@ def test_guion_completo():
     # Los textos del flujo v2 del cliente (Flujo_Agente_Juan_Jose.docx) están en <guion>.
     for seccion in ("BIENVENIDA", "PEDIR_CEDULA", "CEDULA_INVALIDA", "CEDULA_NO_EXISTE",
                     "CONSULTA_NO_DISPONIBLE", "CONFIRMAR_NOMBRES", "PEDIR_CORREO",
-                    "PEDIR_TELEFONO", "PEDIR_BARRIO", "RESUMEN_PERFIL", "REGISTRO_CANCELADO",
+                    "PEDIR_TELEFONO", "PEDIR_BARRIO", "CORREO_INVALIDO", "TELEFONO_INVALIDO", "RESUMEN_PERFIL", "REGISTRO_CANCELADO",
                     "NO_SE_PUDO_GUARDAR", "SALIR", "MENU_PRINCIPAL", "QUIEN_ES", "FAMILIA",
                     "FORMACION", "VALORES_1", "VALORES_2", "PROYECTOS", "SUMARME_AUTORIZACION",
                     "SUMARME_IDEA", "RESUMEN_COLABORACION", "SUMARME_CIERRE", "SUMARME_FALLO",
