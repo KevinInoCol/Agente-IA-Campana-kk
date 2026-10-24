@@ -57,8 +57,8 @@ from transcripcion import transcribir_audio
 # verificar qué corre en producción tras un deploy. Se ven en GET / y GET /health. El
 # build se puede sobreescribir con la env APP_VERSION; si no, subir el default en cada
 # commit que se despliegue.
-VERSION = "2.6.0"
-APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.8-gpt-6.1-sol")
+VERSION = "2.6.1"
+APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.9-max-tokens")
 
 # Cuánto se recuerda un evento ya procesado (Conecta reintenta con espera exponencial).
 DEDUP_TTL_SECONDS = 24 * 3600
@@ -193,6 +193,10 @@ async def _procesar(telefono: str, texto: str) -> None:
         respuesta = await run_in_threadpool(_invocar_agente, texto, telefono, nombre_perfil)
     except Exception:  # noqa: BLE001 — la persona no puede quedarse sin respuesta
         logger.exception("Falló la invocación del agente")
+        respuesta = MENSAJE_ERROR
+    if not respuesta:
+        # Cortada por max_tokens (el razonamiento también cuenta) o sin texto.
+        logger.warning("El modelo no devolvió texto para %s", _thread_id(telefono))
         respuesta = MENSAJE_ERROR
     if respuesta:
         await smartgob_conecta.enviar_texto(telefono, respuesta, contact_id)

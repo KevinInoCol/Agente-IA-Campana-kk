@@ -9,4 +9,4 @@ model: gpt-6.1-sol      # Desde 2026-10-24 (pedido del usuario). En la conversac
 reasoning_effort: low   # El mínimo que acepta gpt-6.1-sol (no admite `none`). No acepta `temperature`.
 use_responses_api: true # Obligatorio: en Chat Completions, gpt-6.1-sol solo admite tools con
                         # reasoning_effort none, que no soporta. El texto se lee con `.text`.
-max_tokens: 600         # Los mensajes del guion son de 3-4 líneas; 600 deja margen sin permitir respuestas largas
+max_tokens: 4096        # Tope de salida: con la Responses API incluye el razonamiento (600 cortaba)
