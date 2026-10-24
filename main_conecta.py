@@ -58,8 +58,8 @@ from transcripcion import transcribir_audio
 # verificar qué corre en producción tras un deploy. Se ven en GET / y GET /health. El
 # build se puede sobreescribir con la env APP_VERSION; si no, subir el default en cada
 # commit que se despliegue.
-VERSION = "1.2.0"
-APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.1-raiz-y-dinardap")
+VERSION = "2.0.0"
+APP_VERSION = os.getenv("APP_VERSION", "2026-10-24.2-flujo-v2")
 
 # Cuánto se recuerda un evento ya procesado (Conecta reintenta con espera exponencial).
 DEDUP_TTL_SECONDS = 24 * 3600
