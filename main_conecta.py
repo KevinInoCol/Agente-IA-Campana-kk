@@ -48,6 +48,7 @@ from debounce import (
     encolar_mensaje,
     get_redis,
 )
+from integraciones import persona
 from simpatizantes import apps_script, repositorio
 from smartgob_conecta import config as conecta_config
 from transcripcion import transcribir_audio
@@ -143,6 +144,9 @@ def health() -> dict:
                      "namespace": REDIS_KEY_PREFIX},
         "simpatizantes": {"postgres": repositorio.esta_configurado(),
                           "apps_script": apps_script.esta_configurado()},
+        "registro_civil": {"fuente": persona.PERSONA_FUENTE,
+                           "credenciales": bool(persona.adaptador.VENTANILLA_USER
+                                                and persona.adaptador.VENTANILLA_PASSWORD)},
     }
 
 

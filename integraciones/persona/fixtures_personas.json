@@ -1,0 +1,11 @@
+{
+  "_comentario": "Cédulas SINTÉTICAS para desarrollo y tests (PERSONA_FUENTE=stub). Dígito verificador válido, SIN titular real. Para probar 'no existe', usar cualquier otra cédula válida.",
+  "0915450001": {
+    "first_name": "MARIA FERNANDA",
+    "full_name": "PRUEBA SINTETICA MARIA FERNANDA"
+  },
+  "0900000001": {
+    "first_name": "MARIA JOSE",
+    "full_name": "PRUEBA SINTETICA MARIA JOSE"
+  }
+}

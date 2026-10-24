@@ -25,6 +25,15 @@ Validación (backend, no el modelo):
     no tiene o no quiere darlo, el registro igual se completa.
   - nombres y barrio: texto no vacío.
 
+Cédula en el registro civil (DINARDAP, `integraciones/persona/`, el mismo adapter que
+MAD): si `PERSONA_FUENTE` no es `ninguna`, una cédula válida se consulta ANTES de
+guardarla. La consulta la hace el backend, no el modelo.
+  - existe            -> se guarda con `cedula_verificada = true`.
+  - no existe / fallecida -> NO se guarda; error CEDULA_NO_EXISTE (pide revisarla).
+  - fuente caída o mal configurada -> se guarda igual con `cedula_verificada = false`.
+    Un fallo del Registro Civil no puede dejar a la persona sin registrarse.
+Si la cédula ya estaba guardada y verificada, no se vuelve a consultar.
+
 Obligatorios para que el registro quede COMPLETO: cédula, nombres y barrio.
 """
 
@@ -35,17 +44,39 @@ from langchain.tools import ToolRuntime, tool
 from agent_context import ConversacionContext
 from dominio.correo import normalizar_email
 from dominio.identidad import validar_cedula
+from integraciones import persona
 from simpatizantes import Ciudadano, repositorio
 
 logger = logging.getLogger(__name__)
 
 OBLIGATORIOS = ("cedula", "nombres", "barrio")
 MAX_TEXTO = 160
+NO_EXISTE = "NO_EXISTE"
 
 
 def _limpio(valor: str | None) -> str | None:
     texto = " ".join(str(valor or "").split())[:MAX_TEXTO]
     return texto or None
+
+
+def verificar_cedula(cedula: str) -> bool | str | None:
+    """Consulta el registro civil. True existe, NO_EXISTE, False sin respuesta, None apagado."""
+    if not persona.esta_activa():
+        return None
+    try:
+        r = persona.consultar_persona(cedula)
+    except Exception:  # noqa: BLE001
+        logger.exception("registrar_ciudadano: falló la consulta al registro civil")
+        return False
+    if r["ok"]:
+        return True
+    codigo = r["error"]["code"]
+    if codigo in ("PERSON_NOT_FOUND", "PERSON_DECEASED"):
+        return NO_EXISTE
+    # Sin la cédula en el log: solo el código y el correlation_id.
+    logger.warning("registrar_ciudadano: registro civil no disponible (%s, corr=%s)",
+                   codigo, r["meta"]["correlation_id"])
+    return False
 
 
 def primer_nombre(nombres: str | None) -> str | None:
@@ -94,6 +125,15 @@ def registrar_datos(
         return {"ok": False, "registro_completo": False, "faltan": [],
                 "error": "No se pudo guardar en este momento."}
 
+    verificada = guardado.get("cedula_verificada")
+    if datos["cedula"] and not (datos["cedula"] == guardado.get("cedula") and verificada):
+        verificada = verificar_cedula(datos["cedula"])
+        if verificada == NO_EXISTE:
+            logger.info("registrar_ciudadano: la cédula no existe en el registro civil")
+            errores.append("CEDULA_NO_EXISTE")
+            datos["cedula"] = None
+            verificada = guardado.get("cedula_verificada")
+
     combinado = {k: datos[k] or guardado.get(k) for k in datos}
     faltan = [k for k in OBLIGATORIOS if not combinado[k]]
     if not combinado["correo"] and "CORREO_INVALIDO" not in errores:
@@ -113,6 +153,7 @@ def registrar_datos(
             cedula=combinado["cedula"], nombres=combinado["nombres"],
             correo=combinado["correo"], barrio=combinado["barrio"],
             telefono=telefono, nombre_perfil=nombre_perfil, canal=canal,
+            cedula_verificada=verificada,
         ))
     except Exception:  # noqa: BLE001
         logger.exception("registrar_ciudadano: falló el guardado")
@@ -148,8 +189,8 @@ def registrar_ciudadano(
     Returns:
         registro_completo=true -> ya está registrada; `nombre` es su primer nombre
         para saludarla. registro_completo=false -> pide SOLO lo que está en `faltan`.
-        `error`: CEDULA_INVALIDA (pide revisar el número) o CORREO_INVALIDO (pide
-        revisar el correo). ok=false sin `faltan` -> no se pudo guardar.
+        `error`: CEDULA_INVALIDA o CEDULA_NO_EXISTE (pide revisar el número) o
+        CORREO_INVALIDO (pide revisar el correo). ok=false sin `faltan` -> no se pudo guardar.
     """
     ctx = runtime.context or ConversacionContext()
     resultado = registrar_datos(

@@ -34,7 +34,7 @@
 # ============================================
 
 name: toto-reyes-whatsapp-system-prompt
-version: 1.1.2
+version: 1.2.0
 description: >
   Asistente de WhatsApp de la campaña de Juan José "Toto" Reyes Baquerizo (Concejal,
   Guayaquil). Registra a la persona en la bienvenida (cédula, nombres, correo, barrio;
@@ -227,6 +227,9 @@ system_prompt: |
      - `registro_completo: false` -> agradece y pide SOLO lo que está en `faltan`.
      - `error` CEDULA_INVALIDA -> dile que el número de cédula no parece correcto y
        pídele que lo revise. No muestres el número que escribió.
+     - `error` CEDULA_NO_EXISTE -> dile que no encontramos esa cédula en el registro
+       civil y pídele que revise el número. No muestres el número que escribió ni
+       digas nada más sobre la consulta.
      - `error` CORREO_INVALIDO -> pídele que revise el correo, o que te diga si
        prefiere no darlo.
      - `ok: false` sin `faltan` -> no pudiste guardar en este momento: pídele que lo

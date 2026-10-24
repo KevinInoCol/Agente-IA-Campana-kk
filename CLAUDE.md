@@ -48,7 +48,7 @@ y se sube la `version` del prompt.
 ```bash
 conda activate toto-reyes                               # Python 3.11, requirements-dev.txt
 docker compose -p toto-reyes-dev -f docker-compose.dev.yml up -d   # Postgres :55432 + Redis :56379 (desechables)
-python -m pytest -q                                     # 66 tests (el de integración necesita el Postgres local)
+python -m pytest -q                                     # 110 tests (OJO: el de integración usa la base del .env; hoy es el Supabase real)
 python rag/rag.py --dry-run                            # revisa la Ayuda Memoria sin gastar tokens ni tocar Qdrant
 python main.py --telefono 593991234567                  # CLI
 uvicorn main_conecta:app --reload --port 8000           # canal WhatsApp (webhook de SmartGob Conecta)
@@ -66,6 +66,7 @@ prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
 tools/                   registrar_ciudadano + guardar_simpatizante (cableadas); buscar_conocimiento (SIN cablear)
 middleware/              EstadoRegistro: agrega <estado_del_registro> al system prompt en cada llamada
 dominio/                 validación pura de cédula (módulo 10) y correo               (de MAD)
+integraciones/persona/   consulta al registro civil (DINARDAP vía ventanilla)        (de MAD)
 rag/rag.py               ingesta de la Ayuda Memoria a Qdrant (rag/data/, no versionado) (de MAD)
 simpatizantes/           repositorio de ciudadanos y simpatizantes: Postgres + Apps Script (opcional)
 smartgob_conecta/        config, cliente (POST /messages, audios) y firma/parser del webhook
@@ -151,6 +152,17 @@ traerlo aquí, y al revés.
   esperaba a tener todo y, probando con el modelo real, se perdían datos.
 - La cédula se valida en el backend (`dominio/identidad.py`, el algoritmo de MAD). El
   modelo nunca la ve en `<estado_del_registro>` ni la repite.
+- **Se corrobora en el registro civil** (2026-10-24): `registrar_ciudadano` consulta la
+  DINARDAP por dentro (`integraciones/persona/`, el adapter de MAD) antes de guardar la
+  cédula. No es una tool aparte: la consulta la hace el backend, nunca el modelo.
+  - `PERSONA_FUENTE`: `ninguna` (por defecto, no consulta), `stub` (tests) o
+    `ventanilla` (real, Basic Auth `VENTANILLA_DINARDAP_USER`/`_PASSWORD`).
+  - No existe o fallecida → no se guarda, error `CEDULA_NO_EXISTE` (el bot pide
+    revisarla). Fuente caída → se guarda igual con `cedula_verificada = false`: un
+    fallo del Registro Civil no deja a nadie sin registrarse.
+  - Solo se usa para verificar: no se guardan nombre, sexo ni fecha de nacimiento de
+    la fuente, y el bot no le dice a nadie el nombre de quien tiene esa cédula.
+  - `GET /health` → `registro_civil` dice la fuente y si hay credenciales.
 - El registro no bloquea la información: si la persona pregunta antes de registrarse,
   se le responde y se le piden los datos (como mucho dos veces).
 - Una fila por número de WhatsApp (índice único parcial sobre `telefono`).

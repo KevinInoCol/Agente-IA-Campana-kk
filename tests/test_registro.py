@@ -57,7 +57,8 @@ def base_simulada(monkeypatch):
     def guardar(c):
         nuevo = c.telefono not in filas
         filas[c.telefono] = {"cedula": c.cedula, "nombres": c.nombres,
-                             "correo": c.correo, "barrio": c.barrio}
+                             "correo": c.correo, "barrio": c.barrio,
+                             "cedula_verificada": c.cedula_verificada}
         return 1, nuevo
 
     monkeypatch.setattr(repositorio, "esta_configurado", lambda: True)
@@ -92,7 +93,8 @@ def test_completar_un_registro_existente_conserva_lo_guardado(base_simulada):
     r = registrar_datos(correo="carlos@outlook.es", telefono="t1")
     assert r["ok"] and not r["nuevo"]
     assert base_simulada["t1"] == {"cedula": CEDULA, "nombres": "Carlos Mora",
-                                   "correo": "carlos@outlook.es", "barrio": "Guasmo"}
+                                   "correo": "carlos@outlook.es", "barrio": "Guasmo",
+                                   "cedula_verificada": None}
 
 
 def test_cedula_invalida_no_se_guarda_pero_el_resto_si(base_simulada):
@@ -165,7 +167,7 @@ def test_integracion_upsert_por_telefono():
         assert r1["ok"] and r1["nuevo"] and r2["ok"] and not r2["nuevo"]
         assert repositorio.buscar_ciudadano(tel) == {
             "cedula": CEDULA, "nombres": "Prueba Test", "correo": "prueba@test.ec",
-            "barrio": "Centro"}
+            "barrio": "Centro", "cedula_verificada": None}
     finally:
         with repositorio._get_pool().connection() as conn:
             conn.execute(f"delete from {repositorio._esquema_activo()}.ciudadanos "

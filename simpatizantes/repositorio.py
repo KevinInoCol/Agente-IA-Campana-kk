@@ -71,6 +71,8 @@ class Ciudadano:
     telefono: str | None = None
     nombre_perfil: str | None = None
     canal: str = "whatsapp"
+    # Consulta al registro civil: True existe, False no se pudo consultar, None no se consultó.
+    cedula_verificada: bool | None = None
 
 
 def esta_configurado() -> bool:
@@ -157,20 +159,24 @@ def guardar_ciudadano(ciudadano: Ciudadano) -> tuple[int, bool]:
     siempre inserta.
     """
     valores = (ciudadano.telefono, ciudadano.cedula, ciudadano.nombres, ciudadano.correo,
-               ciudadano.barrio, ciudadano.nombre_perfil, ciudadano.canal)
-    columnas = sql.SQL("(telefono, cedula, nombres, correo, barrio, nombre_perfil, canal)")
+               ciudadano.barrio, ciudadano.nombre_perfil, ciudadano.canal,
+               ciudadano.cedula_verificada)
+    columnas = sql.SQL(
+        "(telefono, cedula, nombres, correo, barrio, nombre_perfil, canal, cedula_verificada)"
+    )
     if ciudadano.telefono:
         consulta = sql.SQL(
-            "insert into {} {} values (%s, %s, %s, %s, %s, %s, %s) "
+            "insert into {} {} values (%s, %s, %s, %s, %s, %s, %s, %s) "
             "on conflict (telefono) where telefono is not null do update set "
             "cedula = excluded.cedula, nombres = excluded.nombres, correo = excluded.correo, "
             "barrio = excluded.barrio, nombre_perfil = excluded.nombre_perfil, "
+            "cedula_verificada = excluded.cedula_verificada, "
             "actualizado_en = now() "
             "returning id, (xmax = 0) as nuevo"
         ).format(_tabla("ciudadanos"), columnas)
     else:
         consulta = sql.SQL(
-            "insert into {} {} values (%s, %s, %s, %s, %s, %s, %s) returning id, true"
+            "insert into {} {} values (%s, %s, %s, %s, %s, %s, %s, %s) returning id, true"
         ).format(_tabla("ciudadanos"), columnas)
     with _get_pool().connection() as conn:
         fila = conn.execute(consulta, valores).fetchone()
@@ -182,13 +188,15 @@ def buscar_ciudadano(telefono: str | None) -> dict | None:
     if not telefono:
         return None
     consulta = sql.SQL(
-        "select cedula, nombres, correo, barrio from {} where telefono = %s"
+        "select cedula, nombres, correo, barrio, cedula_verificada from {} "
+        "where telefono = %s"
     ).format(_tabla("ciudadanos"))
     with _get_pool().connection() as conn:
         fila = conn.execute(consulta, (telefono,)).fetchone()
     if fila is None:
         return None
-    return {"cedula": fila[0], "nombres": fila[1], "correo": fila[2], "barrio": fila[3]}
+    return {"cedula": fila[0], "nombres": fila[1], "correo": fila[2], "barrio": fila[3],
+            "cedula_verificada": fila[4]}
 
 
 def cerrar() -> None:
