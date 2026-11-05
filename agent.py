@@ -47,8 +47,6 @@ from input_guardrails import construir_middleware_guardrail
 from middleware import EstadoRegistroMiddleware
 from tools import (
     confirmar_colaboracion,
-    confirmar_nombres,
-    confirmar_perfil,
     consultar_cedula,
     guardar_datos_contacto,
     preparar_colaboracion,
@@ -70,12 +68,10 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Las tools cableadas. Constante de módulo para que /health las reporte.
 TOOLS_CABLEADAS = [
-    # Registro inicial (flujo v2: F03 a F06; sin F02, el cliente descartó el aviso de privacidad)
+    # Registro inicial (flujo v4: cédula -> correo -> celular -> barrio)
     consultar_cedula,        # ACCIÓN  cédula -> DINARDAP -> nombres completos
-    confirmar_nombres,       # ACCIÓN  "¿Son correctos?"
-    guardar_datos_contacto,  # ACCIÓN  correo, teléfono de contacto, barrio
-    confirmar_perfil,        # ACCIÓN  resumen -> confirmar o cancelar el registro
-    # "Quiero sumarme" (F09 a F13)
+    guardar_datos_contacto,  # ACCIÓN  correo, celular de contacto, barrio
+    # "Quiero unirme" / "Quiero hacer una propuesta"
     preparar_colaboracion,   # ACCIÓN  idea en borrador + resumen
     confirmar_colaboracion,  # ACCIÓN  registrar (idempotente) o cancelar
 ]

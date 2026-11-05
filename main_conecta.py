@@ -68,7 +68,8 @@ DEDUP_TTL_SECONDS = 24 * 3600
 # mensajes reales sin dejar datos personales en el log.
 PAYLOADS_A_REGISTRAR = 5
 
-MENSAJE_AUDIO_FALLIDO = "No pude escuchar tu audio. ¿Me lo escribes, por favor?"
+# Texto del flujo v4 (TOTOBOT.docx, mensajes transversales).
+MENSAJE_AUDIO_FALLIDO = "Por ahora solo puedo leer mensajes escritos 📝 ¿Puedes escribirlo, por favor?"
 MENSAJE_ERROR = ("Gracias por tu mensaje. Tuve un problema para responderte; "
                  "¿me escribes de nuevo en un momento?")
 

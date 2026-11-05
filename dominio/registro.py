@@ -1,5 +1,5 @@
 """
-Paso pendiente del registro inicial (flujo v2, F03 a F07) — dominio PURO.
+Paso pendiente del registro inicial (flujo v4) — dominio PURO.
 =========================================================================
 
 Con la fila de `ciudadanos` de un número de WhatsApp, dice qué toca ahora. Lo usan
@@ -7,18 +7,20 @@ las tools (para devolverle al modelo el `siguiente_paso`) y el middleware (para
 contarle el estado en cada turno). Una sola implementación: el orden del flujo vive
 aquí y en ningún otro lado.
 
-Orden del documento del cliente, SIN el paso F02 (aceptación de términos): el
-cliente lo descartó el 2026-10-24 porque no hay aviso de privacidad.
-    CEDULA -> CONFIRMAR_NOMBRES -> CORREO -> TELEFONO -> BARRIO
-           -> REVISAR_PERFIL -> COMPLETO
+Orden de "FLUJO PROPUESTA V4" (TOTOBOT.docx, 2026-11-05): ya no se confirman los
+nombres ni se revisa un resumen; con el barrio la persona queda registrada.
+    CEDULA -> CORREO -> TELEFONO -> BARRIO -> COMPLETO
+
+Las columnas `nombres_confirmados` y `registro_confirmado_en` se siguen llenando
+(las tools las marcan solas) para que el equipo vea cuándo se completó el registro,
+pero ya no deciden el paso. Quien quedó a medias en los pasos viejos de confirmar
+nombres o revisar el resumen pasa directo al siguiente dato que le falte.
 """
 
 CEDULA = "CEDULA"
-CONFIRMAR_NOMBRES = "CONFIRMAR_NOMBRES"
 CORREO = "CORREO"
 TELEFONO = "TELEFONO"
 BARRIO = "BARRIO"
-REVISAR_PERFIL = "REVISAR_PERFIL"
 COMPLETO = "COMPLETO"
 
 # Datos de contacto, en el orden en que se piden (F05).
@@ -30,19 +32,15 @@ def siguiente_paso(registro: dict | None) -> str:
     r = registro or {}
     if not r.get("cedula") or not r.get("nombres"):
         return CEDULA
-    if not r.get("nombres_confirmados"):
-        return CONFIRMAR_NOMBRES
     for paso, campo in CONTACTO:
         if not r.get(campo):
             return paso
-    if not r.get("registro_confirmado_en"):
-        return REVISAR_PERFIL
     return COMPLETO
 
 
 def perfil_completo(registro: dict | None) -> bool:
-    """True si están todos los datos del perfil (aunque falte confirmarlo en F06)."""
-    return siguiente_paso(registro) in (REVISAR_PERFIL, COMPLETO)
+    """True si están todos los datos del registro."""
+    return siguiente_paso(registro) == COMPLETO
 
 
 def nombre_de_pila(nombres: str | None) -> str | None:

@@ -10,6 +10,7 @@ SQL puro e idempotente. Se pega tal cual en el SQL Editor de Supabase (o se corr
 | 2 | `002_ciudadanos.sql` | Tabla `ciudadanos`: el registro de la bienvenida (guion v1), una fila por número de WhatsApp. |
 | 3 | `003_cedula_verificada.sql` | Columna `ciudadanos.cedula_verificada`: si la cédula se corroboró en el registro civil (DINARDAP). |
 | 4 | `004_flujo_v2.sql` | Flujo v2: nombres confirmados, teléfono de contacto y confirmación del perfil en `ciudadanos`; estado borrador/confirmada/cancelada en `simpatizantes`. |
+| 5 | `005_flujo_v4.sql` | Flujo v4 (opcional, sin columnas nuevas): marca como registrados a quienes completaron sus datos en el v2 sin confirmar el resumen. |
 
 El esquema está escrito a mano en `001` porque el SQL se pega en el editor. En el código
 nunca: sale de `DB_SCHEMA`. Si se cambia el esquema, cambiarlo en los dos lados.

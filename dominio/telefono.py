@@ -41,6 +41,25 @@ def normalizar_telefono(texto: str | None) -> str | None:
     return digitos if 8 <= len(digitos) <= 15 else None
 
 
+def normalizar_celular(texto: str | None) -> str | None:
+    """Celular de Ecuador en dígitos con código de país, o None.
+
+    Flujo v4: "Debe tener 10 dígitos y empezar con 09". Se aceptan espacios, guiones
+    y el prefijo +593 (que es el mismo número escrito de otra forma); fijos y números
+    extranjeros, no.
+
+        "099 123 4567"     -> "593991234567"
+        "+593 99 123 4567" -> "593991234567"
+        "04 2345678"       -> None
+    """
+    digitos = _SOLO_DIGITOS.sub("", (texto or "").strip())
+    if re.fullmatch(r"09\d{8}", digitos):
+        return "593" + digitos[1:]
+    if re.fullmatch(r"(00)?5939\d{8}", digitos):
+        return digitos[-12:]
+    return None
+
+
 def enmascarar_telefono(telefono: str | None) -> str | None:
     """'593991234567' -> '*********567' (solo los 3 últimos dígitos)."""
     if not telefono:

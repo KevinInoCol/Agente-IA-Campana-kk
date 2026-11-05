@@ -1,4 +1,4 @@
-"""'Quiero sumarme' del flujo v2 (F09 a F13): borrador, confirmación idempotente y fallos."""
+"""'Quiero unirme' del flujo v4: borrador, confirmación idempotente y fallos."""
 
 from datetime import datetime, timezone
 
@@ -33,6 +33,11 @@ def test_sin_idea(registrado):
     assert preparar("   ", TEL)["error"] == "SIN_IDEA"
 
 
+def test_idea_corta_pide_mas_detalle(registrado):
+    assert preparar("Ayudar", TEL)["error"] == "IDEA_CORTA"
+    assert registrado.colaboraciones == []
+
+
 def test_preparar_devuelve_el_resumen_y_no_registra(registrado):
     r = preparar("Quiero ser voluntaria", TEL)
     assert r["ok"] and r["resumen"] == {
@@ -43,10 +48,10 @@ def test_preparar_devuelve_el_resumen_y_no_registra(registrado):
 
 
 def test_corregir_la_idea_reemplaza_el_borrador(registrado):
-    preparar("Idea uno", TEL)
-    preparar("Idea dos", TEL)
+    preparar("Primera idea para el barrio", TEL)
+    preparar("Segunda idea para el barrio", TEL)
     assert len(registrado.colaboraciones) == 1
-    assert registrado.colaboraciones[0]["ayuda"] == "Idea dos"
+    assert registrado.colaboraciones[0]["ayuda"] == "Segunda idea para el barrio"
 
 
 def test_confirmar_registra_con_los_datos_revisados(registrado):
@@ -79,9 +84,9 @@ def test_cancelar(registrado):
 
 
 def test_una_nueva_colaboracion_pide_una_idea_nueva(registrado):
-    preparar("Idea uno", TEL)
+    preparar("Primera idea para el barrio", TEL)
     confirmar(True, TEL)
-    preparar("Idea dos", TEL)
+    preparar("Segunda idea para el barrio", TEL)
     assert [c["estado"] for c in registrado.colaboraciones] == ["confirmada", "borrador"]
 
 
@@ -141,8 +146,8 @@ def test_integracion_borrador_y_confirmacion():
             tel, cedula="0915450001", nombres="PRUEBA TEST ANA",
             nombres_confirmados=True, correo="p@test.ec", telefono_contacto=tel,
             barrio="Centro", registro_confirmado_en=datetime.now(timezone.utc))
-        assert preparar("Uno", tel)["ok"] and preparar("Dos", tel)["ok"]
-        assert repositorio.obtener_borrador(tel)["ayuda"] == "Dos"
+        assert preparar("Primera idea para el barrio", tel)["ok"] and preparar("Segunda idea para el barrio", tel)["ok"]
+        assert repositorio.obtener_borrador(tel)["ayuda"] == "Segunda idea para el barrio"
         assert confirmar(True, tel)["ok"]
         assert confirmar(True, tel)["ya_registrada"]
         with repositorio._get_pool().connection() as conn:

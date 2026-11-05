@@ -5,17 +5,17 @@ con LangChain v1 (`create_agent`) + LangGraph sobre FastAPI. El canal es la API 
 **SmartGob Conecta** (plataforma de Origami que corre Evolution API por debajo), por
 indicación del cliente (2026-10-21).
 
-Hace tres cosas (flujo v2, `Flujo_Agente_Juan_Jose.docx`, 2026-10-24):
-1. **Registro inicial obligatorio antes del menú**: cédula consultada en la **DINARDAP**, que devuelve los nombres → la persona los
-   confirma → correo, teléfono de contacto y barrio → resumen y confirmación. Tabla
-   `ciudadanos`. El middleware `EstadoRegistro` le dice al modelo, en cada turno, en
-   qué paso está la persona (`paso_pendiente`).
-2. **Presenta al candidato** con los textos aprobados: quién es, su familia, sus
-   valores, su formación y sus proyectos, con una tabla de navegación entre menús.
-3. **Registra colaboraciones** con "Quiero sumarme": autorización → idea (borrador)
-   → resumen → confirmación expresa. Tabla `simpatizantes` (estado borrador /
-   confirmada / cancelada). **Registro y colaboraciones son los datos que le importan
-   al cliente.**
+Es **TotoBot** y hace tres cosas (flujo v4, `TOTOBOT (1).docx`, 2026-11-05):
+1. **Registro corto obligatorio antes del menú**: cédula consultada en la **DINARDAP**
+   (los nombres salen de ahí, sin pedir confirmación) → correo → celular (09…) →
+   barrio → "Ya quedaste registrado". Tabla `ciudadanos`. La bienvenida trae el
+   consentimiento ("al ingresar los datos, aceptas…"). El middleware `EstadoRegistro`
+   le dice al modelo, en cada turno, en qué paso está la persona (`paso_pendiente`).
+2. **Presenta al candidato**: Biografía y Propuestas, con los textos del documento.
+3. **Recibe ideas** con "Quiero unirme a la campaña" / "Quiero hacer una propuesta"
+   (mismo camino): idea → "¿Está correcta?" (1 enviar / 2 modificar) → cierre. Tabla
+   `simpatizantes` (estado borrador / confirmada / cancelada). **Registro e ideas son
+   los datos que le importan al cliente.**
 
 ## Fuente de verdad del contenido
 
@@ -23,7 +23,8 @@ En `../` (carpeta del cliente):
 
 | Documento | Uso |
 |---|---|
-| `Flujo_Agente_Juan_Jose.docx` (2026-10-24) | **Fuente de verdad (flujo v2, pasos F01 a F13).** Textos casi literales en `<guion>` del prompt. Su página 10 lista puntos "por validar"; ver abajo cómo quedaron. |
+| `TOTOBOT (1).docx` ("FLUJO PROPUESTA V4", recibido 2026-11-05) | **Fuente de verdad (flujo v4).** Textos casi literales en `<guion>` del prompt. Los huecos del documento y cómo se resolvieron están en la cabecera de `prompt/prompt.yaml` y abajo. |
+| `Flujo_Agente_Juan_Jose.docx` (2026-10-24) | Flujo v2, reemplazado por el v4. |
 | `FlujoTTRBOT v1.docx` (2026-10-22) | Guion v1, reemplazado por el v2. |
 | `Datos/BOT_x5f_WHATSAPP_…_FINAL.docx/.pdf` | Guion anterior, reemplazado por el v1. |
 | `TOTO REYES2.pdf` (manual de marca) | Solo el cargo (Concejal) y las frases de campaña. |
@@ -50,7 +51,7 @@ y se sube la `version` del prompt.
 ```bash
 conda activate toto-reyes                               # Python 3.11, requirements-dev.txt
 docker compose -p toto-reyes-dev -f docker-compose.dev.yml up -d   # Postgres :55432 + Redis :56379 (desechables)
-python -m pytest -q                                     # 143 tests (OJO: los 2 de integración usan la base del .env, hoy el Supabase real: correrlos con DATABASE_URL local)
+python -m pytest -q                                     # 135 tests (OJO: los de integración usan la base del .env, hoy el Supabase real: correr con `DATABASE_URL= DB_HOST=` o con una base local)
 python rag/rag.py --dry-run                            # revisa la Ayuda Memoria sin gastar tokens ni tocar Qdrant
 python main.py --telefono 593991234567                  # CLI
 uvicorn main_conecta:app --reload --port 8000           # canal WhatsApp (webhook de SmartGob Conecta)
@@ -65,7 +66,7 @@ main.py                  CLI
 main_conecta.py          FastAPI: webhook de Conecta (firma HMAC) -> debounce -> agente -> POST /messages
 model_config/            parámetros del LLM (gpt-6.1-sol, reasoning low, Responses API; desde 2026-10-24)
 prompt/prompt.yaml       system prompt en formato TAGS, con el guion del cliente
-tools/                   registro_tool (4 tools, F03-F06) + colaboracion_tool (2 tools, F09-F12); buscar_conocimiento (SIN cablear)
+tools/                   registro_tool (2 tools) + colaboracion_tool (2 tools); buscar_conocimiento (SIN cablear)
 middleware/              EstadoRegistro: agrega <estado_del_registro> al system prompt en cada llamada
 dominio/                 cédula y correo (de MAD), teléfono, orden del registro
 integraciones/persona/   consulta al registro civil (DINARDAP vía ventanilla)        (de MAD)
@@ -144,41 +145,41 @@ traerlo aquí, y al revés.
 - Base de datos y Redis **propios de esta campaña**. El `.env` local apunta a los
   contenedores de `docker-compose.dev.yml`. No reutilizar los de MAD.
 
-## Registro y colaboraciones (flujo v2)
+## Registro e ideas (flujo v4)
 
-- **En `main` desde el 2026-10-24.** Antes de Implementar hacen falta
-  `PERSONA_FUENTE=ventanilla` y las credenciales de la ventanilla: sin la DINARDAP
-  nadie se registra (los nombres salen de ahí). `GET /health` → `registro_civil`.
-- **Sin aviso de privacidad (F02 descartado).** El documento lo pedía obligatorio,
-  pero Giovani dijo que no hay enlace de privacidad y se quitó (2026-10-24). ⚠️ El bot
-  pide cédula, correo y teléfono sin aviso ni consentimiento (LOPDP): decisión del
-  cliente.
+- **Rama `flujo-v4`** (2026-11-05). Reemplaza al v2: sin confirmar nombres, sin
+  resumen del perfil, sin "Cancelar registro" y sin paso de autorización en "Quiero
+  unirme". Tools: `consultar_cedula`, `guardar_datos_contacto`,
+  `preparar_colaboracion`, `confirmar_colaboracion`.
 - **El orden lo manda el backend**, no el prompt: `dominio/registro.py` calcula el
-  `paso_pendiente` (CEDULA → CONFIRMAR_NOMBRES → CORREO → TELEFONO → BARRIO
-  → REVISAR_PERFIL → COMPLETO). Las tools lo devuelven como `siguiente_paso` y el
-  middleware lo pone en `<estado_del_registro>`.
-- **Los nombres solo salen de la DINARDAP** (`integraciones/persona/`, el adapter de
-  MAD). Si la consulta falla, no se registra: Reintentar o Salir. No hay vía de nombre
-  manual (el documento dice que no está aprobada). Los registros del guion v1 tienen
-  cédula sin nombres verificados: `consultar_cedula("")` usa la guardada.
-- **Todos los campos son obligatorios** (criterio del documento, pendiente de
-  validar). El teléfono de contacto es aparte del WhatsApp; "el mismo de este número"
-  → `usar_whatsapp=true`, lo copia el backend.
-- **Corregir un dato del perfil deshace su confirmación** y obliga a revisar el
-  resumen otra vez. "Cancelar registro" borra la fila.
-- **Colaboraciones idempotentes:** confirmar es un `update ... where estado =
-  'borrador'`; repetirlo no duplica. Sin conexión a la base → `FALLO`; error a mitad
-  → `RESULTADO_INCIERTO`, y "Comprobar estado" vuelve a llamar a la misma tool. Al
-  confirmar se guarda la copia de correo y teléfono que la persona revisó.
+  `paso_pendiente` (CEDULA → CORREO → TELEFONO → BARRIO → COMPLETO). Las tools lo
+  devuelven como `siguiente_paso` y el middleware lo pone en `<estado_del_registro>`.
+  Quien quedó a medias en los pasos del v2 pasa solo al dato que le falte.
+- `nombres_confirmados` y `registro_confirmado_en` se siguen llenando (al consultar la
+  cédula y al completar el barrio) para que el equipo sepa desde cuándo está
+  registrado. `migrations/005_flujo_v4.sql` (opcional) marca a los del v2.
+- **Validaciones en las tools:** celular de 10 dígitos que empieza con 09 (también
+  +593 9…; fijos y extranjeros no); barrio con al menos 2 letras; idea de al menos
+  10 caracteres (`IDEA_CORTA`).
+- **Los nombres solo salen de la DINARDAP** (`integraciones/persona/`). Si la
+  consulta falla, no se registra: Reintentar o Salir. Hace falta
+  `PERSONA_FUENTE=ventanilla` + credenciales. `GET /health` → `registro_civil`.
+- **Ideas idempotentes:** confirmar es un `update ... where estado = 'borrador'`;
+  repetirlo no duplica. Sin conexión → `FALLO`; error a mitad → `RESULTADO_INCIERTO`.
 - El modelo nunca ve la cédula; correo y teléfono le llegan enmascarados.
 - El guardrail de entrada bloqueaba todo mensaje con correo (leía `gmail.com` como un
   enlace). Corregido el 2026-10-22: los correos se quitan antes del filtro de URLs.
 
-**Pendiente del cliente (página 10 del documento):** confirmar que todos los campos
-son obligatorios; a qué teléfono
-se contacta; cómo consulta el equipo (acceso a Postgres o vista en SmartConecta); vía
-real para atención humana, corrección y borrado de datos. Mientras tanto el bot dice
-con claridad que eso no se puede hacer desde el chat.
+**Huecos del documento v4 (decididos por nosotros, confirmar con el cliente):** el
+menú tiene dos "3" → quedaron 3 y 4, con el mismo camino; "Proyectos" sin texto → no
+se ofrece; menú después del cierre distinto al principal → se usa el principal; falta
+el enlace del canal de difusión → la línea se omite; "MENÚ en cualquier momento" →
+durante el registro no abre el menú.
+
+**No implementado del v4:** recordatorio de inactividad (10 min; requiere envío
+programado) y respuesta a fotos/stickers sin texto (el parser de
+`smartgob_conecta/`, compartido con MAD, los descarta). Los audios se siguen
+transcribiendo; si falla, se responde el texto de "solo puedo leer mensajes escritos".
 
 ## El modelo: `gpt-6.1-sol` por la Responses API (desde 2026-10-24)
 

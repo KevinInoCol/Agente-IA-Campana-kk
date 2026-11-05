@@ -1,12 +1,14 @@
 """
-Tools de "Quiero sumarme" (flujo v2 del cliente, F09 a F13).
-============================================================
+Tools de "Quiero unirme" / "Quiero hacer una propuesta" (flujo v4 del cliente).
+===============================================================================
 
-Reemplaza a `guardar_simpatizante` del guion v1, que guardaba la idea apenas llegaba.
-Ahora la colaboración se arma en dos tiempos:
+La idea se guarda en dos tiempos (pasos 10 y 11 de TOTOBOT.docx):
 
-    F10 preparar_colaboracion   guarda la idea como BORRADOR y devuelve el resumen
-    F11 confirmar_colaboracion  Confirmar registro -> 'confirmada' | Cancelar -> 'cancelada'
+    preparar_colaboracion   guarda la idea como BORRADOR ("¿Está correcta?")
+    confirmar_colaboracion  "Está correcta, enviar al equipo" -> 'confirmada'
+                            (confirma=false -> 'cancelada', sin uso en el guion v4)
+
+La idea tiene que tener al menos MIN_AYUDA caracteres ("Cuéntame un poco más").
 
 Los datos de contacto NO se vuelven a pedir: salen del registro inicial. Al
 confirmar se guarda una copia de lo que la persona revisó en el resumen.
@@ -38,12 +40,15 @@ from tools.registro_tool import resumen_perfil
 logger = logging.getLogger(__name__)
 
 MAX_AYUDA = 2000
+# Paso 10 del documento: "mensaje de menos de ~10 caracteres" -> pedir más detalle.
+MIN_AYUDA = 10
 # Ventana en la que una colaboración recién confirmada cuenta como "ya registrada".
 MINUTOS_CONFIRMADA_RECIENTE = 30
 
 SIN_TELEFONO = "SIN_TELEFONO"
 PERFIL_INCOMPLETO = "PERFIL_INCOMPLETO"
 SIN_IDEA = "SIN_IDEA"
+IDEA_CORTA = "IDEA_CORTA"
 SIN_BORRADOR = "SIN_BORRADOR"
 FALLO = "FALLO"
 RESULTADO_INCIERTO = "RESULTADO_INCIERTO"
@@ -65,10 +70,12 @@ def _perfil(telefono: str | None) -> tuple[dict | None, dict | None]:
 
 def preparar(ayuda: str | None, telefono: str | None, nombre_perfil: str | None = None,
              canal: str = "whatsapp") -> dict:
-    """F10. Guarda (o reemplaza) el borrador y devuelve el resumen para F11."""
+    """Guarda (o reemplaza) el borrador y devuelve el texto para confirmarlo."""
     ayuda = " ".join((ayuda or "").split())[:MAX_AYUDA]
     if not ayuda:
         return {"ok": False, "error": SIN_IDEA}
+    if len(ayuda) < MIN_AYUDA:
+        return {"ok": False, "error": IDEA_CORTA}
     registro, error = _perfil(telefono)
     if error:
         return error
@@ -83,7 +90,7 @@ def preparar(ayuda: str | None, telefono: str | None, nombre_perfil: str | None 
 
 
 def confirmar(confirma: bool, telefono: str | None) -> dict:
-    """F11/F12. Confirma (idempotente) o cancela el borrador."""
+    """Confirma (idempotente) o cancela el borrador."""
     registro, error = _perfil(telefono)
     if error:
         return error
@@ -124,7 +131,7 @@ def confirmar(confirma: bool, telefono: str | None) -> dict:
         # Otro intento la confirmó entre la lectura y el update.
         return {"ok": True, "error": None, "ya_registrada": True, "nombre": nombre}
 
-    # La persona revisó todo su perfil en el resumen de F11: queda confirmado también.
+    # Registros completados antes del flujo v4 pueden no tener la marca: se pone aquí.
     if not registro.get("registro_confirmado_en"):
         try:
             repositorio.actualizar_ciudadano(telefono,
@@ -148,17 +155,18 @@ def _log(nombre: str, resultado: dict) -> dict:
 
 @tool
 def preparar_colaboracion(ayuda: str, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Guarda como borrador cómo quiere sumarse la persona y devuelve el resumen (F10).
+    """Guarda como borrador cómo quiere participar la persona o qué propone.
 
-    Úsala cuando la persona ya autorizó preparar la colaboración (F09) y contó su
-    idea. Si corrige la idea, vuelve a llamarla con la idea nueva.
+    Úsala cuando la persona contó su idea. Si la modifica, vuelve a llamarla con el
+    texto nuevo.
 
     Args:
-        ayuda: Cómo quiere sumarse o qué idea quiere compartir, con sus palabras.
+        ayuda: Cómo quiere participar o qué idea o propuesta comparte, con sus
+            palabras.
 
     Returns:
-        ok=true -> muestra el `resumen` (F11) y pide confirmar. Todavía NO está
-        registrada.
+        ok=true -> muestra el texto (`resumen.ayuda`) y pregunta si está correcto.
+        Todavía NO está enviada. error IDEA_CORTA -> pide que cuente un poco más.
     """
     ctx = runtime.context or ConversacionContext()
     return _log("preparar_colaboracion",
@@ -167,10 +175,11 @@ def preparar_colaboracion(ayuda: str, runtime: ToolRuntime[ConversacionContext])
 
 @tool
 def confirmar_colaboracion(confirma: bool, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Registra (confirma=true) o cancela (confirma=false) la colaboración en borrador.
+    """Envía al equipo (confirma=true) o descarta (confirma=false) la idea en borrador.
 
-    confirma=true con "Confirmar registro", y también para "Reintentar" o "Comprobar
-    estado": nunca duplica. confirma=false con "Cancelar".
+    confirma=true con "Está correcta, enviar al equipo", y también para "Reintentar"
+    o "Comprobar estado": nunca duplica. confirma=false solo si la persona pide
+    expresamente descartar la idea.
 
     Returns:
         ok=true -> quedó registrada (o ya lo estaba: `ya_registrada`). error FALLO ->

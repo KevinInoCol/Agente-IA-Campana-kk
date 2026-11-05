@@ -38,47 +38,55 @@ def test_tools_del_prompt_existen():
 
 
 def test_guion_completo():
-    # Los textos del flujo v2 del cliente (Flujo_Agente_Juan_Jose.docx) están en <guion>.
-    for seccion in ("BIENVENIDA", "PEDIR_CEDULA", "CEDULA_INVALIDA", "CEDULA_NO_EXISTE",
-                    "CONSULTA_NO_DISPONIBLE", "CONFIRMAR_NOMBRES", "PEDIR_CORREO",
-                    "PEDIR_TELEFONO", "PEDIR_BARRIO", "CORREO_INVALIDO", "TELEFONO_INVALIDO", "RESUMEN_PERFIL", "REGISTRO_CANCELADO",
-                    "NO_SE_PUDO_GUARDAR", "SALIR", "MENU_PRINCIPAL", "QUIEN_ES", "FAMILIA",
-                    "FORMACION", "VALORES_1", "VALORES_2", "PROYECTOS", "SUMARME_AUTORIZACION",
-                    "SUMARME_IDEA", "RESUMEN_COLABORACION", "SUMARME_CIERRE", "SUMARME_FALLO",
-                    "SUMARME_INCIERTO", "OPCION_NO_DISPONIBLE", "GRACIAS", "FUERA_DE_ALCANCE"):
+    # Los textos del flujo v4 del cliente (TOTOBOT.docx) están en <guion>.
+    for seccion in ("BIENVENIDA", "PEDIR_CEDULA", "CEDULA_INVALIDA", "CONSULTA_NO_DISPONIBLE",
+                    "PEDIR_CORREO", "CORREO_INVALIDO", "PEDIR_CELULAR", "CELULAR_INVALIDO",
+                    "PEDIR_BARRIO", "BARRIO_INVALIDO", "REGISTRO_COMPLETO", "MENU_PRINCIPAL",
+                    "REGRESO", "NO_SE_PUDO_GUARDAR", "SALIR", "BIOGRAFIA", "PROPUESTAS",
+                    "INVITACION", "IDEA_CORTA", "CONFIRMAR_IDEA", "MODIFICAR_IDEA",
+                    "OPCION_INVALIDA_IDEA", "IDEA_ENVIADA", "ENVIO_FALLIDO", "ENVIO_INCIERTO",
+                    "OPCION_NO_DISPONIBLE", "SOLO_TEXTO", "GRACIAS", "FUERA_DE_ALCANCE"):
         assert re.search(rf"^{seccion}$", SP, re.M), seccion
 
 
-def _texto(seccion):
-    return SP.split(f"\n{seccion}\n")[1].split("\n\n")[0]
+def _bloque(seccion):
+    """Texto de una sección del guion, hasta la siguiente sección en MAYÚSCULAS."""
+    resto = SP.split(f"\n{seccion}\n", 1)[1]
+    return re.split(r"\n[A-Z_]+\n|\n</guion>", resto, maxsplit=1)[0]
 
 
-def test_menu_principal_tiene_las_6_opciones():
-    opciones = re.findall(r"^\d\. ", _texto("MENU_PRINCIPAL"), re.M)
-    assert len(opciones) == 6 and "*Formación*" in _texto("MENU_PRINCIPAL")
+def test_menu_principal_tiene_las_4_opciones():
+    for menu in ("REGISTRO_COMPLETO", "MENU_PRINCIPAL", "REGRESO"):
+        texto = _bloque(menu)
+        assert len(re.findall(r"^[1-4]\ufe0f\u20e3 ", texto, re.M)) == 4, menu
+        assert "Quiero hacer una propuesta" in texto
 
 
-def test_el_cierre_no_promete_contacto():
-    assert "muy pronto" not in SP.split("<guion>")[1].split("</guion>")[0]
+def test_bienvenida_pide_consentimiento():
+    assert "aceptas que usemos tu información" in _bloque("BIENVENIDA")
+
+
+def test_cierre_recuerda_la_fecha_de_votacion():
+    assert "29 de noviembre" in _bloque("IDEA_ENVIADA")
 
 
 def test_cada_paso_del_registro_tiene_su_texto():
     from dominio import registro as paso
     tabla = SP.split("\n<registro>\n")[1].split("\n</registro>\n")[0]
-    for nombre in (paso.CEDULA, paso.CONFIRMAR_NOMBRES, paso.CORREO,
-                   paso.TELEFONO, paso.BARRIO, paso.REVISAR_PERFIL, paso.COMPLETO):
+    for nombre in (paso.CEDULA, paso.CORREO, paso.TELEFONO, paso.BARRIO, paso.COMPLETO):
         assert re.search(rf"^\| {nombre} ", tabla, re.M), nombre
 
 
 def test_errores_de_las_tools_estan_en_el_prompt():
     from tools import colaboracion_tool as c, registro_tool as r
-    for codigo in (r.CEDULA_INVALIDA, r.CEDULA_NO_EXISTE,
-                   r.SERVICIO_NO_DISPONIBLE, r.CORREO_INVALIDO, r.TELEFONO_INVALIDO,
-                   r.NO_SE_PUDO_GUARDAR, r.SIN_TELEFONO,
-                   r.SIN_NOMBRES_PENDIENTES, r.PERFIL_INCOMPLETO, c.FALLO, c.RESULTADO_INCIERTO, c.SIN_BORRADOR):
+    for codigo in (r.CEDULA_INVALIDA, r.CEDULA_NO_EXISTE, r.SERVICIO_NO_DISPONIBLE,
+                   r.CORREO_INVALIDO, r.TELEFONO_INVALIDO, r.BARRIO_INVALIDO,
+                   r.NO_SE_PUDO_GUARDAR, r.SIN_TELEFONO, c.IDEA_CORTA, c.SIN_IDEA,
+                   c.PERFIL_INCOMPLETO, c.FALLO, c.RESULTADO_INCIERTO, c.SIN_BORRADOR):
         assert codigo in SP, codigo
 
 
-def test_sin_aviso_de_privacidad():
-    # El cliente descartó el paso F02 (no hay enlace de privacidad).
-    assert "aceptar_terminos" not in SP and "{enlace_privacidad}" not in SP
+def test_sin_pasos_del_flujo_v2():
+    for viejo in ("confirmar_nombres", "confirmar_perfil", "RESUMEN_PERFIL",
+                  "CONFIRMAR_NOMBRES", "REVISAR_PERFIL", "{enlace_privacidad}"):
+        assert viejo not in SP, viejo

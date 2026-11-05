@@ -2,8 +2,8 @@
 Middleware: le dice al modelo en qué paso del registro está la persona.
 =======================================================================
 
-El flujo v2 del cliente (Flujo_Agente_Juan_Jose.docx) es un recorrido con orden fijo:
-cédula -> nombres -> correo -> teléfono -> barrio -> resumen -> menú. El
+El flujo v4 del cliente (TOTOBOT.docx) es un recorrido con orden fijo:
+cédula -> correo -> celular -> barrio -> menú. El
 modelo no puede saber en qué paso está una persona: la memoria de la conversación no
 sabe qué hay en la base, y alguien que dejó el registro a medias ayer puede volver
 hoy. Por eso, ANTES de cada llamada al modelo se consulta la base por el número de
@@ -15,7 +15,7 @@ Se consulta en CADA llamada al modelo, no una vez por mensaje: si en el mismo tu
 una tool acaba de guardar, la siguiente llamada ya lo ve.
 
 La cédula NO se pasa al modelo. Correo y teléfono de contacto van enmascarados: el
-modelo solo los necesita para el resumen, que los muestra así.
+modelo no necesita verlos completos.
 
 Patrón oficial de LangChain v1 (verificado con el MCP docs-langchain, 2026-10-22):
 `AgentMiddleware.wrap_model_call` + `request.override(system_message=...)`, agregando
@@ -37,12 +37,10 @@ from simpatizantes import repositorio
 logger = logging.getLogger(__name__)
 
 _QUE_PEDIR = {
-    paso.CEDULA: "pedir el número de cédula (F03)",
-    paso.CONFIRMAR_NOMBRES: "preguntar si los nombres recuperados son correctos (F04)",
-    paso.CORREO: "pedir el correo electrónico (F05)",
-    paso.TELEFONO: "pedir el teléfono de contacto (F05)",
-    paso.BARRIO: "pedir el barrio o sector (F05)",
-    paso.REVISAR_PERFIL: "mostrar el resumen de datos y pedir que los confirme (F06)",
+    paso.CEDULA: "pedir el número de cédula",
+    paso.CORREO: "pedir el correo electrónico",
+    paso.TELEFONO: "pedir el número de celular",
+    paso.BARRIO: "pedir el barrio o sector",
     paso.COMPLETO: "nada: el registro está completo y el menú está habilitado",
 }
 
@@ -66,9 +64,7 @@ def describir_estado(registro: dict | None, borrador: dict | None = None,
     elif r.get("cedula"):
         lineas.append("cedula: guardada (el número no se muestra)")
     if r.get("nombres"):
-        estado_nombres = "confirmados" if r.get("nombres_confirmados") else "SIN confirmar"
-        lineas.append(f"nombre_completo: {paso.nombre_para_mostrar(r['nombres'])} "
-                      f"({estado_nombres})")
+        lineas.append(f"nombre_completo: {paso.nombre_para_mostrar(r['nombres'])}")
         lineas.append(f"nombre: {paso.nombre_de_pila(r['nombres'])}")
     if r.get("correo"):
         lineas.append(f"correo_enmascarado: {enmascarar_correo(r['correo'])}")
@@ -79,7 +75,7 @@ def describir_estado(registro: dict | None, borrador: dict | None = None,
 
     if borrador:
         lineas.append(f"colaboracion_en_borrador: «{borrador['ayuda']}» (preparada, SIN "
-                      "confirmar: ofrece retomarla mostrando su resumen)")
+                      "enviar: ofrece retomarla mostrando su texto)")
     return "<estado_del_registro>\n" + "\n".join(lineas) + "\n</estado_del_registro>"
 
 

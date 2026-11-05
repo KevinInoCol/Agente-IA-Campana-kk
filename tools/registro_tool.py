@@ -1,34 +1,33 @@
 """
-Tools del registro inicial (flujo v2 del cliente, F03 a F07).
-=============================================================
+Tools del registro inicial (flujo v4 del cliente, "FLUJO PROPUESTA V4").
+========================================================================
 
-Fuente: `Flujo_Agente_Juan_Jose.docx` (2026-10-24). Reemplaza al registro del guion
-v1, donde la persona escribía su nombre y el correo era opcional. Ahora:
+Fuente: `TOTOBOT (1).docx` (2026-11-05). Reemplaza al flujo v2: ya no se confirman
+los nombres ni se revisa un resumen. Ahora:
 
-    F03 consultar_cedula        cédula -> DINARDAP -> nombres completos
-    F04 confirmar_nombres       "¿Son correctos?"  (no hay vía de nombre manual)
-    F05 guardar_datos_contacto  correo, teléfono de contacto y barrio (todos obligatorios)
-    F06 confirmar_perfil        resumen -> Confirmar datos / Cancelar registro
-    F07                         menú principal, solo con el registro confirmado
+    consultar_cedula        cédula -> DINARDAP -> nombres ("¡Gracias, {nombre}!")
+    guardar_datos_contacto  correo, celular y barrio -> con el barrio queda registrado
 
-El paso F02 del documento (aceptación de términos y privacidad) NO se implementa: el
-cliente lo descartó el 2026-10-24 porque no hay aviso de privacidad.
+La bienvenida avisa que, al ingresar los datos, la persona acepta que se use su
+información para contactarla (consentimiento del documento v4).
 
 Cada tool devuelve `siguiente_paso` (de `dominio/registro.py`): el modelo no tiene
 que deducir el orden del flujo, se lo dice el backend.
 
 REGLAS QUE SE HACEN CUMPLIR AQUÍ (no en el prompt)
 - Los nombres SOLO salen de la DINARDAP. Si la consulta falla, no se registra: se
-  ofrece reintentar o salir (criterio del documento; el nombre manual "no está
-  aprobado"). La consulta la hace el backend, nunca el modelo.
+  ofrece reintentar o salir. La consulta la hace el backend, nunca el modelo.
+- Celular: 10 dígitos que empiezan con 09 (también se acepta escrito con +593).
+- Barrio: con al menos dos letras (ni vacío, ni solo números o símbolos).
 - El teléfono de WhatsApp lo pone el canal en el contexto, nunca el modelo. El
-  teléfono de CONTACTO es otro dato y lo da la persona (o pide usar el mismo).
-- Cambiar un dato del perfil deshace su confirmación: hay que revisar el resumen
-  otra vez (F06: "Corregir ... muestra nuevamente el resumen").
+  celular de CONTACTO es otro dato y lo da la persona (o pide usar el mismo).
+- Cuando el registro se completa se marcan `nombres_confirmados` y
+  `registro_confirmado_en`, para que el equipo sepa desde cuándo está registrado.
 - La cédula no aparece en ningún log ni vuelve al modelo.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from langchain.tools import ToolRuntime, tool
@@ -37,7 +36,7 @@ from agent_context import ConversacionContext
 from dominio import registro as paso
 from dominio.correo import normalizar_email
 from dominio.identidad import validar_cedula
-from dominio.telefono import enmascarar_correo, enmascarar_telefono, normalizar_telefono
+from dominio.telefono import enmascarar_correo, enmascarar_telefono, normalizar_celular
 from integraciones import persona
 from simpatizantes import repositorio
 
@@ -51,10 +50,12 @@ NO_SE_PUDO_GUARDAR = "NO_SE_PUDO_GUARDAR"
 CEDULA_INVALIDA = "CEDULA_INVALIDA"
 CEDULA_NO_EXISTE = "CEDULA_NO_EXISTE"
 SERVICIO_NO_DISPONIBLE = "SERVICIO_NO_DISPONIBLE"
-SIN_NOMBRES_PENDIENTES = "SIN_NOMBRES_PENDIENTES"
 CORREO_INVALIDO = "CORREO_INVALIDO"
 TELEFONO_INVALIDO = "TELEFONO_INVALIDO"
-PERFIL_INCOMPLETO = "PERFIL_INCOMPLETO"
+BARRIO_INVALIDO = "BARRIO_INVALIDO"
+
+# Un barrio tiene que traer al menos dos letras: "Guasmo Sur" sí, "123" o "..." no.
+_LETRAS = re.compile(r"[^\W\d_]")
 
 
 def _limpio(valor: str | None) -> str | None:
@@ -63,7 +64,7 @@ def _limpio(valor: str | None) -> str | None:
 
 
 def resumen_perfil(registro: dict | None) -> dict:
-    """Datos para el resumen de F06/F11, con correo y teléfono enmascarados."""
+    """Datos del registro con correo y teléfono enmascarados (lo que ve el modelo)."""
     r = registro or {}
     return {
         "nombre_completo": paso.nombre_para_mostrar(r.get("nombres")),
@@ -78,7 +79,7 @@ def _resultado(registro: dict | None, ok: bool = True, error: str | None = None,
     siguiente = paso.siguiente_paso(registro)
     resultado = {"ok": ok, "error": error, "siguiente_paso": siguiente,
                  "nombre": paso.nombre_de_pila((registro or {}).get("nombres"))}
-    if siguiente in (paso.REVISAR_PERFIL, paso.COMPLETO):
+    if siguiente == paso.COMPLETO:
         resultado["resumen"] = resumen_perfil(registro)
     resultado.update(extra)
     return resultado
@@ -109,7 +110,7 @@ def _guardar(telefono: str, registro: dict, **campos) -> dict:
 # ---------------------------------------------------------------------------
 def verificar_cedula(cedula: str | None, telefono: str | None,
                      nombre_perfil: str | None = None, canal: str = "whatsapp") -> dict:
-    """F03. Valida la cédula, consulta la DINARDAP y guarda los nombres SIN confirmar.
+    """Valida la cédula, consulta la DINARDAP y guarda los nombres.
 
     Con `cedula` vacía usa la que ya estaba guardada (registros del guion v1, que
     tienen cédula pero no nombres del registro civil).
@@ -145,8 +146,7 @@ def verificar_cedula(cedula: str | None, telefono: str | None,
         return _resultado(registro, ok=False, error=SERVICIO_NO_DISPONIBLE)
 
     campos = {"cedula": validacion.normalizada, "nombres": respuesta["data"]["full_name"],
-              "cedula_verificada": True, "nombres_confirmados": False,
-              "registro_confirmado_en": None, "canal": canal}
+              "cedula_verificada": True, "nombres_confirmados": True, "canal": canal}
     if nombre_perfil:
         campos["nombre_perfil"] = nombre_perfil
     nuevo = _guardar(telefono, registro, **campos)
@@ -155,28 +155,13 @@ def verificar_cedula(cedula: str | None, telefono: str | None,
     return _resultado(nuevo, nombre_completo=paso.nombre_para_mostrar(nuevo.get("nombres")))
 
 
-def responder_nombres(correctos: bool, telefono: str | None) -> dict:
-    """F04. Sí -> nombres confirmados. Revisar cédula -> se borran cédula y nombres."""
-    registro, error = _leer(telefono)
-    if error:
-        return error
-    if not registro.get("cedula") or not registro.get("nombres"):
-        return _resultado(registro, ok=False, error=SIN_NOMBRES_PENDIENTES)
-    if correctos:
-        campos = {"nombres_confirmados": True}
-    else:
-        campos = {"cedula": None, "nombres": None, "cedula_verificada": None,
-                  "nombres_confirmados": False, "registro_confirmado_en": None}
-    nuevo = _guardar(telefono, registro, **campos)
-    if "_error" in nuevo:
-        return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
-    return _resultado(nuevo)
-
-
 def guardar_contacto(telefono: str | None, correo: str | None = None,
                      telefono_contacto: str | None = None, usar_whatsapp: bool = False,
                      barrio: str | None = None) -> dict:
-    """F05. Guarda los datos de contacto válidos que lleguen; avisa de los inválidos."""
+    """Guarda los datos de contacto válidos que lleguen; avisa de los inválidos.
+
+    Si con lo guardado el registro queda completo, marca `registro_confirmado_en`.
+    """
     registro, error = _leer(telefono)
     if error:
         return error
@@ -191,45 +176,27 @@ def guardar_contacto(telefono: str | None, correo: str | None = None,
     if usar_whatsapp:
         campos["telefono_contacto"] = telefono
     elif _limpio(telefono_contacto):
-        normalizado = normalizar_telefono(telefono_contacto)
+        normalizado = normalizar_celular(telefono_contacto)
         if normalizado:
             campos["telefono_contacto"] = normalizado
         else:
             errores.append(TELEFONO_INVALIDO)
     if _limpio(barrio):
-        campos["barrio"] = _limpio(barrio)
+        if len(_LETRAS.findall(barrio)) >= 2:
+            campos["barrio"] = _limpio(barrio)
+        else:
+            errores.append(BARRIO_INVALIDO)
 
     cambios = {k: v for k, v in campos.items() if v != registro.get(k)}
     if not cambios:
         return _resultado(registro, ok=not errores, error=", ".join(errores) or None)
-    cambios["registro_confirmado_en"] = None      # cambió el perfil: hay que revisarlo
+    if (paso.siguiente_paso({**registro, **cambios}) == paso.COMPLETO
+            and not registro.get("registro_confirmado_en")):
+        cambios["registro_confirmado_en"] = datetime.now(timezone.utc)
     nuevo = _guardar(telefono, registro, **cambios)
     if "_error" in nuevo:
         return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
     return _resultado(nuevo, error=", ".join(errores) or None)
-
-
-def responder_perfil(confirma: bool, telefono: str | None) -> dict:
-    """F06. Confirmar datos -> registro completo. Cancelar registro -> se borra la fila."""
-    registro, error = _leer(telefono)
-    if error:
-        return error
-    if not confirma:
-        try:
-            repositorio.borrar_ciudadano(telefono)
-        except Exception:  # noqa: BLE001
-            logger.exception("registro: no se pudo cancelar el registro")
-            return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
-        return {"ok": True, "error": None, "siguiente_paso": paso.CEDULA,
-                "registro_cancelado": True}
-    if not paso.perfil_completo(registro):
-        return _resultado(registro, ok=False, error=PERFIL_INCOMPLETO)
-    if registro.get("registro_confirmado_en"):
-        return _resultado(registro)
-    nuevo = _guardar(telefono, registro, registro_confirmado_en=datetime.now(timezone.utc))
-    if "_error" in nuevo:
-        return _resultado(registro, ok=False, error=NO_SE_PUDO_GUARDAR)
-    return _resultado(nuevo)
 
 
 def _log(nombre: str, resultado: dict) -> dict:
@@ -248,7 +215,7 @@ def _ctx(runtime: ToolRuntime[ConversacionContext]) -> ConversacionContext:
 # ---------------------------------------------------------------------------
 @tool
 def consultar_cedula(cedula: str, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Consulta la cédula en el registro civil y devuelve los nombres asociados (F03).
+    """Consulta la cédula en el registro civil y guarda los nombres asociados.
 
     Args:
         cedula: Número de cédula ecuatoriana tal como lo escribió la persona. Vacío
@@ -256,22 +223,12 @@ def consultar_cedula(cedula: str, runtime: ToolRuntime[ConversacionContext]) -> 
             pendiente de consultar.
 
     Returns:
-        ok=true -> muestra `nombre_completo` y pregunta si es correcto (F04).
-        error: CEDULA_INVALIDA, CEDULA_NO_EXISTE, SERVICIO_NO_DISPONIBLE.
+        ok=true -> agradece con `nombre` y pide el correo (no hay que confirmar
+        los nombres). error: CEDULA_INVALIDA, CEDULA_NO_EXISTE, SERVICIO_NO_DISPONIBLE.
     """
     ctx = _ctx(runtime)
     return _log("consultar_cedula", verificar_cedula(
         cedula, ctx.telefono, nombre_perfil=ctx.nombre_perfil, canal=ctx.canal))
-
-
-@tool
-def confirmar_nombres(correctos: bool, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Guarda si los nombres recuperados de la cédula son correctos (F04).
-
-    correctos=true con "Sí, continuar". correctos=false con "Revisar cédula": se
-    descartan cédula y nombres y hay que pedir la cédula otra vez.
-    """
-    return _log("confirmar_nombres", responder_nombres(correctos, _ctx(runtime).telefono))
 
 
 @tool
@@ -282,33 +239,23 @@ def guardar_datos_contacto(
     usar_whatsapp: bool = False,
     barrio: str = "",
 ) -> dict:
-    """Guarda correo, teléfono de contacto y/o barrio (F05). Todos opcionales.
+    """Guarda correo, celular de contacto y/o barrio. Todos opcionales.
 
     Úsala CADA VEZ que la persona dé uno o más de estos datos; manda solo los que dio,
     tal como los escribió. Lo ya guardado se conserva.
 
     Args:
         correo: Correo electrónico.
-        telefono: Teléfono de contacto que la persona escribió.
-        usar_whatsapp: true SOLO si la persona dice que su teléfono de contacto es el
+        telefono: Celular de contacto que la persona escribió.
+        usar_whatsapp: true SOLO si la persona dice que su celular de contacto es el
             mismo número desde el que escribe. Nunca lo supongas.
         barrio: Barrio o sector desde donde escribe, con sus palabras.
 
     Returns:
-        `siguiente_paso` dice qué pedir ahora. error CORREO_INVALIDO o
-        TELEFONO_INVALIDO -> pide revisar solo ese dato.
+        `siguiente_paso` dice qué pedir ahora; COMPLETO -> quedó registrado.
+        error CORREO_INVALIDO, TELEFONO_INVALIDO o BARRIO_INVALIDO -> pide revisar
+        solo ese dato.
     """
     return _log("guardar_datos_contacto", guardar_contacto(
         _ctx(runtime).telefono, correo=correo, telefono_contacto=telefono,
         usar_whatsapp=usar_whatsapp, barrio=barrio))
-
-
-@tool
-def confirmar_perfil(confirma: bool, runtime: ToolRuntime[ConversacionContext]) -> dict:
-    """Confirma o cancela el registro después del resumen de datos (F06).
-
-    confirma=true con "Confirmar datos". confirma=false SOLO con "Cancelar registro":
-    borra los datos de la persona. Para "Corregir" no la llames: pide el dato y
-    guárdalo con la tool que corresponda.
-    """
-    return _log("confirmar_perfil", responder_perfil(confirma, _ctx(runtime).telefono))
