@@ -10,7 +10,7 @@ DINARDAP en producción. Aquí solo quedan los modos que sirven a Toto, elegidos
                             módulo 10, como antes. Así el agente sigue funcionando
                             igual mientras no haya credenciales.
     stub                    fixtures locales con cédulas SINTÉTICAS. Sin red (tests).
-    ventanilla              DINARDAP vía la ventanilla municipal (rmpplayas), Basic
+    ventanilla              DINARDAP vía ventanilla municipal (Daule, SIGERI), Basic
                             Auth. La misma fuente que usa MAD.
 
 REGLAS (heredadas de MAD)
@@ -53,7 +53,7 @@ PERSONA_TIMEOUT_MS = int(os.getenv("PERSONA_TIMEOUT_MS", "8000"))
 
 VENTANILLA_URL = os.getenv(
     "VENTANILLA_DINARDAP_URL",
-    "https://ventanilla.rmpplayas.gob.ec/services/api/dinardap/consulta",
+    "https://devenlinea.daule.gob.ec/dinardap-rp/api/dinardap/aplicacion/SIGERI/identificacion",
 )
 VENTANILLA_USER = os.getenv("VENTANILLA_DINARDAP_USER", "")
 VENTANILLA_PASSWORD = os.getenv("VENTANILLA_DINARDAP_PASSWORD", "")
