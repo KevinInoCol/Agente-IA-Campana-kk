@@ -68,26 +68,89 @@ def _nombre_de_pila(nombre_completo: str) -> str:
     return " ".join(partes)
 
 
-def mapear_ventanilla_dinardap(respuesta: dict, cedula: str, referencia: str) -> PersonaDTO:
-    """Respuesta de `/services/api/dinardap/consulta/{id}` -> `PersonaDTO`."""
+# Formatos tolerados. El servicio de Daule (SIGERI, 2026-11-06) reemplazó al de
+# rmpplayas y su forma exacta aún no está verificada: se aceptan las variantes
+# habituales en vez de exigir el `nombre` plano del servicio anterior.
+_CLAVES_ENVOLTORIO = ("data", "datos", "persona", "resultado", "result", "respuesta",
+                      "response", "ciudadano", "registro")
+_CLAVES_NOMBRE_COMPLETO = ("nombre", "nombrecompleto", "nombre_completo",
+                           "nombrescompletos", "nombres_completos")
+_CLAVES_CEDULA = ("cedula", "identificacion", "numeroidentificacion", "numero_identificacion")
+
+
+def _minusculas(d: dict) -> dict:
+    return {str(k).lower(): v for k, v in d.items()}
+
+
+def _texto(d: dict, claves) -> str:
+    for c in claves:
+        v = d.get(c)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
+def _desenvolver(respuesta, profundidad: int = 0):
+    """Baja por listas y envoltorios (`data`, `persona`...) hasta el registro."""
+    if profundidad > 3:
+        return respuesta
+    if isinstance(respuesta, list):
+        return _desenvolver(respuesta[0], profundidad + 1) if respuesta else {}
+    if not isinstance(respuesta, dict):
+        return respuesta
+    d = _minusculas(respuesta)
+    if _texto(d, _CLAVES_NOMBRE_COMPLETO) or "nombres" in d:
+        return respuesta
+    for c in _CLAVES_ENVOLTORIO:
+        if isinstance(d.get(c), (dict, list)):
+            return _desenvolver(d[c], profundidad + 1)
+    return respuesta
+
+
+def forma(x):
+    """Estructura de un JSON (claves y tipos), SIN valores: apta para logs (LOPDP)."""
+    if isinstance(x, dict):
+        return {k: forma(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [forma(x[0])] if x else []
+    return type(x).__name__
+
+
+def mapear_ventanilla_dinardap(respuesta, cedula: str, referencia: str) -> PersonaDTO:
+    """Respuesta de la ventanilla DINARDAP -> `PersonaDTO`.
+
+    Acepta el formato de rmpplayas (`nombre` = "APELLIDOS NOMBRES") y variantes:
+    envuelto en `data`/`persona`/..., dentro de una lista, o con `apellidos` y
+    `nombres` por separado.
+    """
+    respuesta = _desenvolver(respuesta)
     if not isinstance(respuesta, dict) or not respuesta:
         raise PersonaNoEncontrada()
+    d = _minusculas(respuesta)
 
-    if "numeroRuc" in respuesta and "sexo" not in respuesta:
+    if "numeroruc" in d and "sexo" not in d:
         raise RespuestaIlegible(
             "la fuente devolvió un registro del SRI (RUC), no del registro civil"
         )
 
-    nombre_completo = str(respuesta.get("nombre") or "").strip()
-    if not nombre_completo:
+    nombre_completo = _texto(d, _CLAVES_NOMBRE_COMPLETO)
+    nombres = _texto(d, ("nombres",))
+    apellidos = _texto(d, ("apellidos",))
+    if nombre_completo:
+        first_name = _nombre_de_pila(nombre_completo)
+    elif nombres and apellidos:
+        nombre_completo, first_name = f"{apellidos} {nombres}", nombres
+    elif nombres:
+        nombre_completo, first_name = nombres, _nombre_de_pila(nombres)
+    else:
         raise PersonaNoEncontrada()
 
-    if any(str(respuesta.get(c) or "").strip() for c in _CAMPOS_DEFUNCION):
+    if any(str(d.get(c.lower()) or "").strip() for c in _CAMPOS_DEFUNCION):
         raise PersonaFallecida()
 
     return PersonaDTO(
-        national_id=str(respuesta.get("cedula") or cedula).strip(),
-        first_name=_nombre_de_pila(nombre_completo),
+        national_id=_texto(d, _CLAVES_CEDULA) or cedula,
+        first_name=first_name,
         full_name=nombre_completo,
         raw_source_ref=referencia,
     )

@@ -40,6 +40,7 @@ from .mapper import (
     PersonaFallecida,
     PersonaNoEncontrada,
     RespuestaIlegible,
+    forma,
     mapear_ventanilla_dinardap,
 )
 from .puerto import FuentePersona
@@ -156,17 +157,29 @@ class AdaptadorVentanilla(FuentePersona):
                           False, correlation_id, self.nombre)
 
         try:
-            dto = mapear_ventanilla_dinardap(r.json(), cedula, f"ventanilla:{correlation_id}")
+            cuerpo = r.json()
+        except ValueError:
+            logger.warning("persona: respuesta no es JSON (corr=%s, HTTP %s)",
+                           correlation_id, r.status_code)
+            return _fallo("SOURCE_MALFORMED", "La respuesta de la fuente no es interpretable.",
+                          False, correlation_id, self.nombre)
+        try:
+            dto = mapear_ventanilla_dinardap(cuerpo, cedula, f"ventanilla:{correlation_id}")
         except PersonaFallecida:
             logger.info("persona: registro con defunción (corr=%s)", correlation_id)
             return _fallo("PERSON_DECEASED",
                           "El registro civil marca a la persona como fallecida.",
                           False, correlation_id, self.nombre)
         except PersonaNoEncontrada:
+            # Solo claves y tipos, nunca valores: sirve para detectar un cambio de
+            # formato de la fuente sin escribir datos personales en el log.
+            logger.info("persona: respuesta sin nombre (corr=%s) · estructura: %s",
+                        correlation_id, json.dumps(forma(cuerpo), ensure_ascii=False))
             return _fallo("PERSON_NOT_FOUND", "La cédula no existe en la fuente.",
                           False, correlation_id, self.nombre)
         except (RespuestaIlegible, ValueError) as e:
-            logger.warning("persona: respuesta ilegible (corr=%s): %s", correlation_id, e)
+            logger.warning("persona: respuesta ilegible (corr=%s): %s · estructura: %s",
+                           correlation_id, e, json.dumps(forma(cuerpo), ensure_ascii=False))
             return _fallo("SOURCE_MALFORMED", "La respuesta de la fuente no es interpretable.",
                           False, correlation_id, self.nombre)
 

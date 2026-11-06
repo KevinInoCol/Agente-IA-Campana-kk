@@ -61,3 +61,29 @@ def test_cedula_invalida_no_sale_a_la_red(fuente, monkeypatch):
     fuente("ventanilla")
     monkeypatch.setattr(httpx, "get", lambda *a, **k: pytest.fail("no debía salir a la red"))
     assert adaptador.consultar_persona("0915450002")["error"]["code"] == "NATIONAL_ID_INVALID"
+
+
+# --- Variantes de formato (servicio de Daule/SIGERI, forma aún no verificada) ------
+
+@pytest.mark.parametrize("cuerpo,nombre,completo", [
+    ({"data": {"nombre": "MORA PEREZ ANA LUCIA"}}, "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+    ([{"nombre": "MORA PEREZ ANA LUCIA"}], "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+    ({"NOMBRE": "MORA PEREZ ANA LUCIA"}, "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+    ({"nombreCompleto": "MORA PEREZ ANA LUCIA"}, "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+    ({"apellidos": "MORA PEREZ", "nombres": "ANA LUCIA"}, "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+    ({"persona": {"identificacion": EXISTE, "nombres": "MORA PEREZ ANA LUCIA"}},
+     "ANA LUCIA", "MORA PEREZ ANA LUCIA"),
+])
+def test_ventanilla_formatos(ventanilla, cuerpo, nombre, completo):
+    ventanilla(200, cuerpo)
+    r = adaptador.consultar_persona(EXISTE)
+    assert r["ok"], r
+    assert (r["data"]["first_name"], r["data"]["full_name"]) == (nombre, completo)
+
+
+def test_respuesta_sin_nombre_registra_estructura_sin_datos(ventanilla, caplog):
+    ventanilla(200, {"mensaje": "DATO_SENSIBLE", "codigo": 0})
+    with caplog.at_level("INFO", logger="integraciones.persona"):
+        assert adaptador.consultar_persona(EXISTE)["error"]["code"] == "PERSON_NOT_FOUND"
+    assert '"mensaje": "str"' in caplog.text
+    assert "DATO_SENSIBLE" not in caplog.text and EXISTE not in caplog.text
