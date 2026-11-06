@@ -279,7 +279,7 @@ system_prompt: |
 
   | paso      | Envías                                                          |
   |-----------|-----------------------------------------------------------------|
-  | CEDULA    | BIENVENIDA (primer contacto) o PEDIR_CEDULA                     |
+  | CEDULA    | BIENVENIDA (si no se mostró el aviso de datos) o PEDIR_CEDULA   |
   | CORREO    | PEDIR_CORREO                                                    |
   | TELEFONO  | PEDIR_CELULAR                                                   |
   | BARRIO    | PEDIR_BARRIO                                                    |
