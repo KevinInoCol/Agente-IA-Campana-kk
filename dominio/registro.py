@@ -43,16 +43,58 @@ def perfil_completo(registro: dict | None) -> bool:
     return siguiente_paso(registro) == COMPLETO
 
 
+# Partículas de apellidos compuestos: van pegadas a la palabra que sigue, así
+# "DI LORENZO" o "DE LA TORRE" cuentan como UN apellido. Sin esto, "PARRA DI LORENZO
+# AMIRA" saludaba a "Lorenzo" (reporte de Giovani, 2026-11-16).
+_PARTICULAS = frozenset({
+    "DE", "DEL", "LA", "LAS", "LOS", "DI", "DA", "DAL", "DALLA", "DELLA", "DELLE",
+    "DOS", "DAS", "DU", "VAN", "VON", "DER", "DEN", "TEN", "TER", "SAN", "SANTA", "MAC",
+})
+
+
+def _unidades(nombres: str | None) -> list[str]:
+    """Agrupa las palabras: cada partícula se une a la siguiente palabra."""
+    unidades: list[str] = []
+    pendiente: list[str] = []
+    for palabra in (nombres or "").split():
+        pendiente.append(palabra)
+        if palabra.upper() not in _PARTICULAS:
+            unidades.append(" ".join(pendiente))
+            pendiente = []
+    if pendiente:  # partícula suelta al final: se pega a la última unidad
+        if unidades:
+            unidades[-1] += " " + " ".join(pendiente)
+        else:
+            unidades.append(" ".join(pendiente))
+    return unidades
+
+
+def separar_nombres(nombres: str | None) -> tuple[str, str]:
+    """"APELLIDOS NOMBRES" de la DINARDAP -> (apellidos, nombres).
+
+    Asume DOS apellidos (lo normal en Ecuador), contando los compuestos como uno:
+        "PARRA DI LORENZO AMIRA"         -> ("PARRA DI LORENZO", "AMIRA")
+        "DE LA TORRE MORA ANA LUCIA"     -> ("DE LA TORRE MORA", "ANA LUCIA")
+    Con menos de 3 unidades no se puede separar con criterio: devuelve ("", todo).
+    Sigue siendo una heurística: con UN solo apellido ("MORA ANA LUCIA") falla.
+    """
+    u = _unidades(nombres)
+    if len(u) >= 3:
+        return " ".join(u[:2]), " ".join(u[2:])
+    return "", " ".join(u)
+
+
 def nombre_de_pila(nombres: str | None) -> str | None:
     """Primer nombre para saludar, a partir del nombre del registro civil.
 
-    La DINARDAP entrega "APELLIDO APELLIDO NOMBRE(S)". Con 3 o más palabras se toma
-    la tercera; con menos no se puede separar con criterio y se usa la primera.
+    "PARRA DI LORENZO AMIRA" -> "Amira"; "MORA PEREZ ANA LUCIA" -> "Ana". Con menos de
+    3 unidades se usa la primera (comportamiento previo).
     """
-    partes = (nombres or "").split()
-    if not partes:
+    u = _unidades(nombres)
+    if not u:
         return None
-    return (partes[2] if len(partes) >= 3 else partes[0]).capitalize()
+    elegido = u[2] if len(u) >= 3 else u[0]
+    return " ".join(p.capitalize() for p in elegido.split())
 
 
 def nombre_para_mostrar(nombres: str | None) -> str | None:

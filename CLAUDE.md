@@ -199,6 +199,35 @@ Recorrido del día: gpt-4.1 → gpt-5.1 → gpt-5.6-terra → gpt-5.6-sol → gp
   reenvían en cada turno. Si un chat largo empieza a fallar, mirar ahí primero.
 - Latencia: 2-3 s en turnos simples, 5-7 s con tools (gpt-4.1 era más rápido).
 
+## Latencia (medida el 2026-11-14)
+
+Giovani reportó que el bot "demora mucho". Causa: el **debounce de 15 s**, no el
+modelo ni DigitalOcean. Con 15 s de ventana la respuesta típica era ~19-20 s.
+
+- **Producción: `DEBOUNCE_ENABLED=false`** en el Entorno de EasyPanel desde el
+  2026-11-14 (el usuario lo cambió). El `.env` local y `.env.example` siguen en `true`/15.
+- **Riesgo de `false`:** cada mensaje se procesa al instante y en paralelo, sin candado
+  por contacto (`main_conecta.py`, `_atender_mensaje`). Una ráfaga da varias respuestas
+  y varias invocaciones sobre el mismo `thread_id` (la última que guarda el checkpoint
+  gana: el bot puede "olvidar" un mensaje). Alternativas: `true` con ventana de 3-5 s, o
+  un `asyncio.Lock` por teléfono.
+- **Mediciones:** agente local (memoria en RAM, sin Langfuse) 10 preguntas → mediana
+  2,05 s, máx 3,8 s. Producción según Langfuse → mediana 3,9 s, p90 6,5 s. La diferencia
+  (~2 s) es Postgres: **el servidor de EasyPanel está en DigitalOcean Santa Clara (CA) y
+  Supabase en us-east-2 (Ohio)**, ~60 ms por ida y vuelta, decenas por turno.
+- **Mejoras pendientes (sin aplicar):** (1) `EstadoRegistroMiddleware` consulta
+  `buscar_ciudadano` + `obtener_borrador` en CADA llamada al modelo: hacerlo una vez por
+  turno; (2) checkpoint solo al final del turno (`durability="exit"`, verificar en el MCP
+  de LangChain); (3) mover el servidor a DO NYC (afecta a MAD, Langfuse y Qdrant). Piso
+  real: ~2 s del modelo. Un modelo más rápido no: gpt-4.1 fallaba con los menús.
+- **Caché:** el caché de prompt de OpenAI ya funciona solo. No cachear respuestas
+  completas (dependen del paso del registro). Pendiente: ver si `gpt-6.1-sol` acepta
+  `prompt_cache_retention` extendido.
+- **Cómo medir:** `/webhook/conecta` responde 200 al instante (no sirve para medir).
+  Usar la API de Langfuse (`/api/public/traces`, `latency` en **ms**; esta instalación
+  devuelve `timestamp` 9999-12-31 y observaciones sin duración) o invocar
+  `_invocar_agente` en local con `DATABASE_URL= DB_HOST= LANGFUSE_TRACING_ENABLED=false`.
+
 ## Puntos a vigilar
 
 - **Guardrail: Groq → Model Armor (2026-10-23).** Las antiguas capas 7 y 8 (modelos

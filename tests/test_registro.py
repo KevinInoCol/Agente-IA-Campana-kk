@@ -107,6 +107,20 @@ def test_nombres_de_la_dinardap():
     assert paso.nombre_para_mostrar("MORA PEREZ ANA LUCIA") == "Mora Perez Ana Lucia"
 
 
+def test_apellidos_compuestos():
+    # Reporte de Giovani (2026-11-16): saludaba "Lorenzo" en vez de "Amira".
+    assert paso.nombre_de_pila("PARRA DI LORENZO AMIRA") == "Amira"
+    assert paso.nombre_de_pila("DE LA TORRE MORA ANA LUCIA") == "Ana"
+    assert paso.nombre_de_pila("MORA DEL POZO LUIS") == "Luis"
+    assert paso.nombre_de_pila("VAN DER BERG LOPEZ PEDRO") == "Pedro"
+    assert paso.separar_nombres("PARRA DI LORENZO AMIRA") == ("PARRA DI LORENZO", "AMIRA")
+    # Los nombres con partícula no se cortan: "MARIA DE LOS ANGELES" sigue entero.
+    assert paso.separar_nombres("MORA PEREZ MARIA DE LOS ANGELES") == (
+        "MORA PEREZ", "MARIA DE LOS ANGELES")
+    assert paso.nombre_de_pila("MORA PEREZ MARIA DE LOS ANGELES") == "Maria"
+    assert paso.nombre_de_pila("") is None
+
+
 def test_sin_telefono(repo, fuente):
     assert verificar_cedula(CEDULA, None)["error"] == "SIN_TELEFONO"
 

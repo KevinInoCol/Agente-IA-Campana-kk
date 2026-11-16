@@ -59,13 +59,12 @@ def _nombre_de_pila(nombre_completo: str) -> str:
         "GUARACA VACACELA NICOLAS"        -> "NICOLAS"
         "SUAREZ COLIMBA LUIS ALEXANDER"   -> "LUIS ALEXANDER"
 
-    Es una HEURÍSTICA (asume dos apellidos). Con 1-2 palabras devuelve el texto
-    completo en vez de recortar mal.
+    Es una HEURÍSTICA (asume dos apellidos, con los compuestos como "DI LORENZO"
+    contados como uno: ver `dominio.registro.separar_nombres`). Con menos de 3
+    unidades devuelve el texto completo en vez de recortar mal.
     """
-    partes = [p for p in (nombre_completo or "").split() if p]
-    if len(partes) >= 3:
-        return " ".join(partes[2:])
-    return " ".join(partes)
+    from dominio.registro import separar_nombres
+    return separar_nombres(nombre_completo)[1]
 
 
 # Formatos tolerados. El servicio de Daule (SIGERI, 2026-11-06) reemplazó al de
