@@ -173,7 +173,7 @@ traerlo aquí, y al revés.
 **Huecos del documento v4 (decididos por nosotros, confirmar con el cliente):** el
 menú tiene dos "3" → quedaron 3 y 4, con el mismo camino; "Proyectos" sin texto → no
 se ofrece; menú después del cierre distinto al principal → se usa el principal; falta
-el enlace del canal de difusión → la línea se omite; "MENÚ en cualquier momento" →
+el enlace del canal de difusión → llegó el 2026-11-21 y va en la BIENVENIDA; "MENÚ en cualquier momento" →
 durante el registro no abre el menú.
 
 **No implementado del v4:** recordatorio de inactividad (10 min; requiere envío

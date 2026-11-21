@@ -75,3 +75,16 @@ def test_registro_completo_no_recibe_bienvenida(monkeypatch):
     menu = AIMessage("¡Hola de nuevo, Ana! 👋")
     msg, _ = _correr([HumanMessage("hola")], menu, "COMPLETO", monkeypatch)
     assert msg is menu
+
+
+def test_bienvenida_anterior_cuenta_como_aviso_mostrado():
+    # Conversaciones que vieron la bienvenida sin el enlace del canal (antes del 2026-11-21).
+    vieja = AIMessage("¡Qué fue! 👋 Soy TotoBot, encantado de saludarte. Para ayudarte de "
+                      "manera personalizada, necesito unos datos rápidos; al ingresar los "
+                      "datos, aceptas que usemos tu información para contactarte sobre "
+                      "nuestras actividades. 🔒\n\nEmpecemos: ¿cuál es tu número de cédula? 🪪")
+    assert er.aviso_mostrado([vieja])
+
+
+def test_bienvenida_trae_el_canal_de_whatsapp():
+    assert er.CANAL_WHATSAPP in er.BIENVENIDA

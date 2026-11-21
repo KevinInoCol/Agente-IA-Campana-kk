@@ -22,8 +22,8 @@ Patrón oficial de LangChain v1 (verificado con el MCP docs-langchain, 2026-10-2
 un bloque a `request.system_message.content_blocks`.
 
 AVISO DE PROTECCIÓN DE DATOS (LOPDP) — GARANTIZADO POR CÓDIGO
-Nadie entrega su cédula sin haber visto antes el aviso de la BIENVENIDA ("al
-ingresar los datos, aceptas..."). No se deja a criterio del modelo: si la persona
+Nadie entrega su cédula sin haber visto antes el aviso de la BIENVENIDA ("aceptas
+que usemos tu información..."). No se deja a criterio del modelo: si la persona
 está en el paso CEDULA y ningún mensaje del asistente en su conversación contiene el
 aviso, cualquier respuesta del modelo (texto o llamada a una tool) se reemplaza por la
 BIENVENIDA completa. Así tampoco se consulta la DINARDAP antes del aviso.
@@ -43,13 +43,22 @@ from simpatizantes import repositorio
 
 logger = logging.getLogger(__name__)
 
+# Frase que prueba que el aviso se mostró. Es común a la bienvenida vieja ("al
+# ingresar los datos, aceptas...") y a la nueva ("Al ingresar tus datos, aceptas..."),
+# para que quien ya vio la vieja no la reciba otra vez a mitad del registro.
+AVISO_DATOS = ("aceptas que usemos tu información para contactarte sobre nuestras "
+               "actividades")
+CANAL_WHATSAPP = "https://whatsapp.com/channel/0029Vb9JvGlElagx3zNdPV2S"
 # Debe coincidir con BIENVENIDA de prompt/prompt.yaml (lo verifica un test).
-AVISO_DATOS = ("al ingresar los datos, aceptas que usemos tu información para "
-               "contactarte sobre nuestras actividades")
 BIENVENIDA = (
-    "¡Qué fue! 👋 Soy TotoBot, encantado de saludarte. Para ayudarte de manera "
-    "personalizada, necesito unos datos rápidos; " + AVISO_DATOS + ". 🔒\n\n"
-    "Empecemos: ¿cuál es tu número de cédula? 🪪"
+    "¡Qué fue! 👋 Soy TotoBot, encantado de saludarte.\n\n"
+    "Antes de empezar, queremos invitarte a formar parte de nuestra comunidad. 💬\n\n"
+    "📲 Únete a nuestro canal de WhatsApp para mantenerte al tanto de nuestras "
+    "novedades y actividades:\n"
+    "👉 " + CANAL_WHATSAPP + "\n\n"
+    "Para ayudarte de manera personalizada, necesito unos datos rápidos. Al ingresar "
+    "tus datos, " + AVISO_DATOS + ". 🔒\n\n"
+    "Empecemos: ¿Cuál es tu número de cédula? 🪪"
 )
 
 _QUE_PEDIR = {
