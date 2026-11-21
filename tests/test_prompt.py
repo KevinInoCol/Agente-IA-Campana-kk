@@ -90,3 +90,7 @@ def test_sin_pasos_del_flujo_v2():
     for viejo in ("confirmar_nombres", "confirmar_perfil", "RESUMEN_PERFIL",
                   "CONFIRMAR_NOMBRES", "REVISAR_PERFIL", "{enlace_privacidad}"):
         assert viejo not in SP, viejo
+
+
+def test_cierre_invita_al_canal_de_whatsapp():
+    assert "https://whatsapp.com/channel/0029Vb9JvGlElagx3zNdPV2S" in _bloque("IDEA_ENVIADA")

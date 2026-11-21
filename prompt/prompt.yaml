@@ -36,7 +36,7 @@
 # ============================================
 
 name: toto-reyes-whatsapp-system-prompt
-version: 3.1.0
+version: 3.2.0
 description: >
   TotoBot, asistente de WhatsApp de la campaña de Juan José "Toto" Reyes Baquerizo
   (Concejal, Guayaquil). Flujo v4: registro corto (cédula consultada en la DINARDAP,
@@ -250,6 +250,9 @@ system_prompt: |
   Mantente atento: pronto nos comunicaremos contigo. 📲
 
   Recuerda que votamos el 29 de noviembre 🗳️
+
+  💬 Únete también a nuestro canal de WhatsApp para mantenerte al tanto de nuestras novedades y actividades:
+  👉 https://whatsapp.com/channel/0029Vb9JvGlElagx3zNdPV2S
 
   Un abrazo,
   Toto Reyes 💜
