@@ -9,7 +9,7 @@ Es **TotoBot** y hace tres cosas (flujo v4, `TOTOBOT (1).docx`, 2026-11-05):
 1. **Registro corto obligatorio antes del menú**: cédula consultada en la **DINARDAP**
    (los nombres salen de ahí, sin pedir confirmación) → correo → celular (09…) →
    barrio → "Ya quedaste registrado". Tabla `ciudadanos`. La bienvenida trae el
-   consentimiento ("al ingresar los datos, aceptas…"). El middleware `EstadoRegistro`
+   consentimiento ("Al ingresar tus datos, aceptas…"). El middleware `EstadoRegistro`
    le dice al modelo, en cada turno, en qué paso está la persona (`paso_pendiente`).
 2. **Presenta al candidato**: Biografía y Propuestas, con los textos del documento.
 3. **Recibe ideas** con "Quiero unirme a la campaña" / "Quiero hacer una propuesta"
