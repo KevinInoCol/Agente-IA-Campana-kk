@@ -32,7 +32,15 @@ En `../` (carpeta del cliente):
 | `postman-ap.zip`, `key-conexion.txt` | API y credencial de **SmartGob Conecta**: es el canal del agente. La key ya está en el `.env` (`SMARTGOB_API_KEY`). |
 
 Si el cliente cambia un texto del bot, se cambia en `prompt/prompt.yaml` → `<guion>`,
-y se sube la `version` del prompt.
+y se sube la `version` del prompt. Al desplegar, subir también `VERSION` y
+`APP_VERSION` en `main_conecta.py`: `GET /` los muestra y es la forma de saber si el
+deploy nuevo ya entró (hoy `3.2.0` / `2026-11-21.2-canal-en-cierre`).
+
+**Canal de WhatsApp** (`https://whatsapp.com/channel/0029Vb9JvGlElagx3zNdPV2S`,
+pedido del cliente el 2026-11-21): va en la BIENVENIDA y en el cierre IDEA_ENVIADA.
+El aviso de datos se detecta con la frase común a la bienvenida vieja y a la nueva
+(`AVISO_DATOS` en `middleware/estado_registro.py`), para no repetirla a quien ya la
+vio. Si se vuelve a cambiar la bienvenida, mantener esa frase.
 
 ## Repositorio y despliegue
 
@@ -49,9 +57,9 @@ y se sube la `version` del prompt.
 ## Comandos
 
 ```bash
-conda activate toto-reyes                               # Python 3.11, requirements-dev.txt
+conda activate toto-reyes                               # Python 3.11, requirements-dev.txt (el entorno no existía el 2026-11-21: recrearlo o usar un venv con uv)
 docker compose -p toto-reyes-dev -f docker-compose.dev.yml up -d   # Postgres :55432 + Redis :56379 (desechables)
-python -m pytest -q                                     # 135 tests (OJO: los de integración usan la base del .env, hoy el Supabase real: correr con `DATABASE_URL= DB_HOST=` o con una base local)
+python -m pytest -q                                     # 149 tests (OJO: los de integración usan la base del .env, hoy el Supabase real: correr con `DATABASE_URL= DB_HOST=` o con una base local)
 python rag/rag.py --dry-run                            # revisa la Ayuda Memoria sin gastar tokens ni tocar Qdrant
 python main.py --telefono 593991234567                  # CLI
 uvicorn main_conecta:app --reload --port 8000           # canal WhatsApp (webhook de SmartGob Conecta)
@@ -173,7 +181,7 @@ traerlo aquí, y al revés.
 **Huecos del documento v4 (decididos por nosotros, confirmar con el cliente):** el
 menú tiene dos "3" → quedaron 3 y 4, con el mismo camino; "Proyectos" sin texto → no
 se ofrece; menú después del cierre distinto al principal → se usa el principal; falta
-el enlace del canal de difusión → llegó el 2026-11-21 y va en la BIENVENIDA; "MENÚ en cualquier momento" →
+el enlace del canal de difusión → llegó el 2026-11-21 (ver arriba); "MENÚ en cualquier momento" →
 durante el registro no abre el menú.
 
 **No implementado del v4:** recordatorio de inactividad (10 min; requiere envío
